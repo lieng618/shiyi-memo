@@ -84,7 +84,6 @@ function goApp() {
 
       <article v-else-if="detail" class="share-content">
         <header class="article-header">
-          <p class="article-kicker">公开分享</p>
           <h1>{{ detail.title || '无标题' }}</h1>
           <p class="article-meta tnum">
             由 {{ detail.ownerName }} 分享 · 更新于 {{ formatFull(detail.updatedAt) }}
@@ -173,15 +172,6 @@ function goApp() {
   margin-bottom: var(--space-8);
   padding-bottom: var(--space-6);
   border-bottom: 1px solid var(--border);
-}
-
-.article-kicker {
-  margin: 0 0 var(--space-3);
-  color: var(--brand);
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
 }
 
 .article-header h1 {

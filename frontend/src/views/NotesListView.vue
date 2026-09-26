@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { Link, Notebook, Paperclip, Search, Star, StarFilled } from '@element-plus/icons-vue'
 import { memoApi, tagApi } from '@/api'
 import type { MemoSummary, Tag } from '@/types'
@@ -26,6 +26,7 @@ const shareDialog = ref(false)
 const shareNote = ref<MemoSummary | null>(null)
 const shareUrl = ref('')
 const shareLoading = ref(false)
+const shareEnabled = ref(false)
 /** 一条笔记都没有时不显示搜索框（搜索无结果时仍保留，方便改关键词） */
 const hasAnyNotes = ref(false)
 
@@ -84,26 +85,12 @@ async function openNote(id: number) {
 }
 
 async function openShare(note: MemoSummary) {
-  shareLoading.value = true
-  try {
-    let token = note.shareToken
-    if (!note.shareEnabled || !token) {
-      const result = await memoApi.share(note.id, true)
-      token = result.token
-      note.shareEnabled = true
-      note.shareToken = token
-    }
-    if (!token) {
-      throw new Error('分享链接生成失败')
-    }
-    shareNote.value = note
-    shareUrl.value = `${window.location.origin}/share/${token}`
-    shareDialog.value = true
-  } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '分享链接生成失败')
-  } finally {
-    shareLoading.value = false
-  }
+  shareNote.value = note
+  shareEnabled.value = note.shareEnabled
+  shareUrl.value = note.shareEnabled && note.shareToken
+    ? `${window.location.origin}/share/${note.shareToken}`
+    : ''
+  shareDialog.value = true
 }
 
 async function copyShareUrl() {
@@ -115,24 +102,25 @@ async function copyShareUrl() {
   }
 }
 
-async function closeShare() {
+async function toggleShare(value: string | number | boolean) {
   const note = shareNote.value
   if (!note) return
-  try {
-    await ElMessageBox.confirm('关闭后，已发出的链接将无法继续查看。', '关闭分享', {
-      confirmButtonText: '关闭分享',
-      cancelButtonText: '取消',
-      type: 'warning',
-    })
-  } catch {
-    return
-  }
+  const enabled = Boolean(value)
   shareLoading.value = true
   try {
-    await memoApi.share(note.id, false)
-    note.shareEnabled = false
-    shareDialog.value = false
-    ElMessage.success('分享已关闭')
+    const result = await memoApi.share(note.id, enabled)
+    note.shareEnabled = result.enabled
+    if (result.token) {
+      note.shareToken = result.token
+      shareUrl.value = `${window.location.origin}/share/${result.token}`
+    }
+    if (!result.enabled) {
+      shareUrl.value = ''
+    }
+    shareEnabled.value = result.enabled
+    ElMessage.success(result.enabled ? '分享已开启' : '分享已关闭')
+  } catch {
+    shareEnabled.value = !enabled
   } finally {
     shareLoading.value = false
   }
@@ -265,16 +253,33 @@ async function closeShare() {
       align-center
     >
       <div class="share-dialog">
-        <label for="share-link">公开链接</label>
-        <div class="share-link-row">
-          <el-input id="share-link" :model-value="shareUrl" readonly />
-          <el-button type="primary" @click="copyShareUrl">复制链接</el-button>
+        <div class="share-toggle-row">
+          <span class="share-toggle-label">分享开启</span>
+          <el-switch
+            :model-value="shareEnabled"
+            :loading="shareLoading"
+            active-color="var(--success)"
+            inactive-color="var(--danger-fill)"
+            aria-label="分享开启"
+            @change="toggleShare"
+          />
         </div>
-        <p class="share-hint">任何拿到链接的人都可以只读查看，不需要登录。</p>
+        <label for="share-link">分享链接</label>
+        <div class="share-link-row">
+          <el-input
+            id="share-link"
+            :model-value="shareUrl"
+            :placeholder="shareEnabled ? '' : '开启分享后生成链接'"
+            readonly
+          />
+          <el-button type="primary" :disabled="!shareEnabled || !shareUrl" @click="copyShareUrl">
+            复制链接
+          </el-button>
+        </div>
+        <p class="share-hint">任何拿到链接的人都可以查看</p>
       </div>
 
       <template #footer>
-        <el-button type="danger" plain :loading="shareLoading" @click="closeShare">关闭分享</el-button>
         <el-button @click="shareDialog = false">完成</el-button>
       </template>
     </el-dialog>
@@ -502,6 +507,23 @@ async function closeShare() {
   color: var(--text-2);
   font-size: 13.5px;
   font-weight: 600;
+}
+
+.share-toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--panel-2);
+}
+
+.share-toggle-label {
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 650;
 }
 
 .share-link-row {
