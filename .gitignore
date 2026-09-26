@@ -1,0 +1,52 @@
+target/
+!.mvn/wrapper/maven-wrapper.jar
+!**/src/main/**/target/
+!**/src/test/**/target/
+.kotlin
+
+### IntelliJ IDEA ###
+.idea/
+*.iws
+*.iml
+*.ipr
+
+### Eclipse ###
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings
+.springBeans
+.sts4-cache
+
+### NetBeans ###
+/nbproject/private/
+/nbbuild/
+/dist/
+/nbdist/
+/.nb-gradle/
+build/
+!**/src/main/**/build/
+!**/src/test/**/build/
+
+### VS Code ###
+.vscode/
+
+### Mac OS ###
+.DS_Store
+
+### shiyi-memo ###
+# 本地配置（含数据库密码、JWT 密钥、邮箱授权码），不要提交
+src/main/resources/application-local.yml
+# 运行期数据：上传的文件、缩略图缓存、日志
+data/
+logs/
+# 构建工具（便携版 Maven），仅本机使用
+.tools/
+
+### 前端 ###
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+# 前端构建产物会直接输出到后端静态目录
+src/main/resources/static/

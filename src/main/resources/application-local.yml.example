@@ -1,0 +1,24 @@
+# 复制成 application-local.yml 后填入你自己的信息
+spring:
+  datasource:
+    username: shiyi_memo
+    password: 你的数据库密码
+  mail:
+    # QQ 邮箱为例：填写邮箱账号 + SMTP 授权码（不是登录密码）
+    username: your@qq.com
+    password: 你的SMTP授权码
+
+app:
+  mail:
+    # 填好授权码后改为 true，验证码就会真正发到邮箱
+    enabled: true
+    # 公网部署请务必设为 false，否则接口会把验证码返回给请求方
+    expose-code: false
+    from: your@qq.com
+  # 后台控制台账号（独立站点 /admin），和备忘录用户无关，务必改成自己的
+  admin:
+    username: admin
+    password: 换一个只有你知道的密码
+  jwt:
+    # 公网部署务必换成随机串，至少 32 个字节
+    secret: 换成一串32字节以上的随机字符

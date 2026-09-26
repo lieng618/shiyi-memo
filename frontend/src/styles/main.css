@@ -1,0 +1,328 @@
+/* ==========================================================================
+   拾忆 · 设计令牌
+   风格：Minimalism & Swiss Style（暖石 + 琥珀 on 纸感底）
+   明暗双模；组件里只用语义 token，不写裸十六进制
+   ========================================================================== */
+
+:root {
+  /* 表面 */
+  --bg: #faf9f5;
+  --panel: #ffffff;
+  --panel-2: #f6f5f0;
+  --panel-hover: #efede6;
+  --border: #e7e4dc;
+  --border-strong: #d5d1c7;
+
+  /* 文本：正文 / 次要 / 元信息，白底上均 ≥4.5:1 */
+  --text: #1c1917;
+  --text-2: #57534e;
+  /* 比 stone-500 再深一档：在 panel-2(#f6f5f0) 上也能过 4.5:1 */
+  --text-3: #6b645e;
+
+  /* 品牌与强调 */
+  --brand: #b45309;
+  --brand-hover: #92400e;
+  --brand-soft: #fbf0dc;
+  --brand-fill: #d97706;
+  --brand-fill-hover: #c66905;
+  --on-brand-fill: #1c1917;
+
+  --danger: #b91c1c;
+  --danger-fill: #dc2626;
+  --success: #15803d;
+
+  /* 极简风格：阴影保持锐利、低扩散 */
+  --shadow-sm: 0 1px 2px rgba(28, 25, 23, 0.06);
+  --shadow: 0 4px 14px rgba(28, 25, 23, 0.07);
+  --shadow-lg: 0 16px 40px rgba(28, 25, 23, 0.14);
+
+  --radius-sm: 8px;
+  --radius: 12px;
+  --radius-lg: 18px;
+
+  /* 间距：4/8 节奏 */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+
+  /* 动效：进入用减速度曲线，退出更快 */
+  --dur-fast: 120ms;
+  --dur: 200ms;
+  --dur-slow: 280ms;
+  --ease-out: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+
+}
+
+/* ------------------------------------------------------------------
+   Element Plus 主题映射。
+   用 html:root 提高优先级：按需引入的组件样式是后加载的，
+   普通 :root 会被它们的默认蓝盖掉。
+   ------------------------------------------------------------------ */
+html:root {
+  --el-color-primary: #d97706;
+  --el-color-primary-light-3: #e4a051;
+  --el-color-primary-light-5: #ecbb82;
+  --el-color-primary-light-7: #f4d6b4;
+  --el-color-primary-light-8: #f8e4cd;
+  --el-color-primary-light-9: #fbf1e6;
+  --el-color-primary-dark-2: #ae5f05;
+  --el-color-danger: #dc2626;
+  --el-color-success: #15803d;
+  --el-color-warning: #b45309;
+  --el-border-radius-base: 10px;
+  --el-font-size-base: 14px;
+  --el-text-color-primary: var(--text);
+  --el-text-color-regular: var(--text-2);
+  --el-text-color-secondary: var(--text-3);
+  --el-border-color: var(--border);
+  --el-border-color-light: var(--border);
+  --el-border-color-lighter: var(--border);
+  --el-fill-color-blank: var(--panel);
+  --el-fill-color-light: var(--panel-2);
+  --el-bg-color: var(--panel);
+  --el-bg-color-overlay: var(--panel);
+  --el-mask-color: rgba(28, 25, 23, 0.45);
+}
+
+/* 琥珀底配深色文字（对比度 7:1），而不是 Element Plus 默认的白字 */
+html:root .el-button--primary {
+  --el-button-text-color: var(--on-brand-fill);
+  --el-button-hover-text-color: var(--on-brand-fill);
+  --el-button-active-text-color: var(--on-brand-fill);
+  --el-button-disabled-text-color: var(--on-brand-fill);
+}
+
+html.dark:root {
+  --el-color-primary: #d97706;
+  --el-color-primary-light-3: #985304;
+  --el-color-primary-light-5: #6d3c03;
+  --el-color-primary-light-7: #412402;
+  --el-color-primary-light-8: #2b1801;
+  --el-color-primary-light-9: #160c01;
+  --el-color-primary-dark-2: #e28d1f;
+}
+
+html.dark {
+  --bg: #171614;
+  --panel: #1f1e1b;
+  --panel-2: #252420;
+  --panel-hover: #2c2a26;
+  --border: #35332e;
+  --border-strong: #4a473f;
+
+  --text: #f1ede6;
+  --text-2: #b5afa4;
+  --text-3: #918b80;
+
+  --brand: #e5a94f;
+  --brand-hover: #f0bd6d;
+  --brand-soft: #33291a;
+  --brand-fill: #d97706;
+  --brand-fill-hover: #e58a15;
+  --on-brand-fill: #1a1917;
+
+  --danger: #f1998f;
+  --danger-fill: #b91c1c;
+  --success: #6ec08b;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+  --shadow-lg: 0 18px 44px rgba(0, 0, 0, 0.55);
+
+  --el-text-color-primary: var(--text);
+  --el-text-color-regular: var(--text-2);
+  --el-text-color-secondary: var(--text-3);
+  --el-border-color: var(--border);
+  --el-border-color-light: var(--border);
+  --el-border-color-lighter: var(--border);
+  --el-fill-color-blank: var(--panel);
+  --el-fill-color-light: var(--panel-2);
+  --el-bg-color: var(--panel);
+  --el-bg-color-overlay: var(--panel);
+  --el-mask-color: rgba(0, 0, 0, 0.6);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Inter Variable', 'Inter', system-ui, -apple-system, 'Segoe UI', 'PingFang SC',
+    'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  font-size: 15px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  overscroll-behavior: none;
+}
+
+/* 体积、时间、计数等数字列对齐 */
+.tnum,
+.meta-row,
+time {
+  font-variant-numeric: tabular-nums;
+}
+
+a {
+  color: var(--brand);
+}
+
+a:hover {
+  color: var(--brand-hover);
+}
+
+:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border: 3px solid transparent;
+  background-clip: content-box;
+  border-radius: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ---------- 独立全屏页面（后台 / 个人中心） ---------- */
+
+.page {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: var(--bg);
+}
+
+.pane-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 60px;
+  padding: var(--space-3) var(--space-5);
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+}
+
+.pane-header h1,
+.pane-header h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 650;
+}
+
+.pane-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.muted {
+  color: var(--text-3);
+}
+
+/* 窄屏隐藏次要说明文字 */
+@media (max-width: 900px) {
+  .hidden-sm {
+    display: none;
+  }
+}
+
+.empty {
+  display: grid;
+  place-items: center;
+  gap: var(--space-3);
+  padding: var(--space-12) var(--space-5);
+  color: var(--text-3);
+  text-align: center;
+}
+
+.empty .empty-icon {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: var(--panel-2);
+  color: var(--text-3);
+  font-size: 24px;
+}
+
+/* 列表进入：轻微上移淡入，错开出现 */
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.stagger-item {
+  animation: rise-in var(--dur-slow) var(--ease-out) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@media (max-width: 768px) {
+  body {
+    font-size: 16px;
+  }
+
+  /* iOS 上小于 16px 的输入框会触发自动放大 */
+  .el-input__inner,
+  .el-textarea__inner {
+    font-size: 16px;
+  }
+
+  .pane-header {
+    padding: var(--space-3) var(--space-4);
+  }
+}

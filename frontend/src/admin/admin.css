@@ -1,0 +1,259 @@
+/* 后台控制台自己的布局：深色侧栏 + 浅色内容区，和备忘录前台风格区分开 */
+
+.adm-login {
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding: var(--space-6) var(--space-4);
+  background: #14130f;
+}
+
+.adm-login-card {
+  width: 100%;
+  max-width: 380px;
+  padding: var(--space-8);
+  background: var(--panel);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+}
+
+.adm-login-card h1 {
+  margin: var(--space-5) 0 var(--space-2);
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.adm-login-card p.sub {
+  margin: 0 0 var(--space-6);
+  color: var(--text-3);
+  font-size: 13.5px;
+  line-height: 1.6;
+}
+
+.adm-badge {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  object-fit: cover;
+}
+
+/* 后台侧栏是深色，图标加一圈描边 */
+.adm-nav .adm-badge {
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.16), 0 4px 12px rgba(0, 0, 0, 0.35);
+}
+
+.adm-shell {
+  display: grid;
+  grid-template-columns: 236px 1fr;
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: var(--bg);
+}
+
+.adm-nav {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-5) var(--space-3);
+  background: #1f1e1b;
+  color: #e9e5de;
+}
+
+.adm-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 0 var(--space-2) var(--space-5);
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+}
+
+.adm-nav-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 42px;
+  padding: 0 var(--space-3);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: #b9b3a9;
+  font-family: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--dur) var(--ease-out), color var(--dur) var(--ease-out);
+}
+
+.adm-nav-item:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: #fff;
+}
+
+.adm-nav-item.active {
+  background: rgba(217, 119, 6, 0.16);
+  color: #f0b355;
+  font-weight: 600;
+}
+
+.adm-nav-footer {
+  margin-top: auto;
+  padding-top: var(--space-4);
+}
+
+.adm-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--bg);
+}
+
+.adm-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  min-height: 64px;
+  padding: var(--space-3) var(--space-6);
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+}
+
+.adm-header h1 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 650;
+}
+
+.adm-header .spacer {
+  flex: 1;
+}
+
+.adm-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--space-5) var(--space-6) var(--space-12);
+}
+
+.adm-card {
+  padding: var(--space-5);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: var(--space-4);
+}
+
+.adm-card h2 {
+  margin: 0 0 var(--space-4);
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.adm-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--space-4);
+  margin-bottom: var(--space-5);
+}
+
+.adm-stat {
+  padding: var(--space-4) var(--space-5);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.adm-stat .label {
+  color: var(--text-3);
+  font-size: 12.5px;
+}
+
+.adm-stat .value {
+  margin-top: var(--space-1);
+  font-size: 24px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.adm-stat.warn .value {
+  color: var(--danger);
+}
+
+.adm-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-4);
+}
+
+.table-wrap {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.user-cell {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.user-cell .who {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.user-cell .who .name {
+  font-weight: 600;
+}
+
+.user-cell .who .mail {
+  color: var(--text-3);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.blocked-tag {
+  margin-left: var(--space-2);
+}
+
+.adm-loading {
+  display: grid;
+  place-items: center;
+  padding: var(--space-10) 0;
+}
+
+@media (max-width: 900px) {
+  .adm-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .adm-nav {
+    flex-direction: row;
+    align-items: center;
+    gap: var(--space-2);
+    overflow-x: auto;
+    padding: var(--space-2) var(--space-3);
+  }
+
+  .adm-brand,
+  .adm-nav-footer {
+    display: none;
+  }
+
+  .adm-nav-item {
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+
+  .adm-body,
+  .adm-header {
+    padding-left: var(--space-4);
+    padding-right: var(--space-4);
+  }
+}
