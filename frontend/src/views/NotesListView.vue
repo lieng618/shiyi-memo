@@ -2,7 +2,16 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Link, Notebook, Paperclip, Search, Star, StarFilled } from '@element-plus/icons-vue'
+import {
+  CopyDocument,
+  Link,
+  Notebook,
+  Paperclip,
+  Search,
+  Share,
+  Star,
+  StarFilled,
+} from '@element-plus/icons-vue'
 import { memoApi, tagApi } from '@/api'
 import type { MemoSummary, Tag } from '@/types'
 import { formatTime } from '@/utils/format'
@@ -248,40 +257,39 @@ async function toggleShare(value: string | number | boolean) {
 
     <el-dialog
       v-model="shareDialog"
-      :title="`分享「${shareNote?.title || '无标题'}」`"
       width="min(520px, 92vw)"
       align-center
+      class="share-dialog-modal"
     >
-      <div class="share-dialog">
-        <div class="share-toggle-row">
-          <span class="share-toggle-label">分享开启</span>
-          <el-switch
-            :model-value="shareEnabled"
-            :loading="shareLoading"
-            active-color="var(--success)"
-            inactive-color="var(--danger-fill)"
-            aria-label="分享开启"
-            @change="toggleShare"
-          />
+      <template #header>
+        <div class="share-dialog-heading">
+          <span class="share-dialog-icon"><el-icon :size="19"><Share /></el-icon></span>
+          <h2>分享</h2>
         </div>
-        <label for="share-link">分享链接</label>
-        <div class="share-link-row">
-          <el-input
-            id="share-link"
-            :model-value="shareUrl"
-            :placeholder="shareEnabled ? '' : '开启分享后生成链接'"
-            readonly
-          />
-          <el-button type="primary" :disabled="!shareEnabled || !shareUrl" @click="copyShareUrl">
-            复制链接
-          </el-button>
-        </div>
-        <p class="share-hint">任何拿到链接的人都可以查看</p>
-      </div>
-
-      <template #footer>
-        <el-button @click="shareDialog = false">完成</el-button>
       </template>
+
+      <div class="share-dialog">
+        <section class="share-link-panel">
+          <div class="share-link-heading">
+            <label for="share-link">分享链接</label>
+            <el-switch
+              :model-value="shareEnabled"
+              :loading="shareLoading"
+              active-color="var(--success)"
+              inactive-color="var(--danger-fill)"
+              aria-label="分享开启"
+              @change="toggleShare"
+            />
+          </div>
+          <div class="share-link-control">
+            <el-input id="share-link" :model-value="shareUrl" readonly />
+            <el-button type="primary" :disabled="!shareEnabled || !shareUrl" @click="copyShareUrl">
+              <el-icon><CopyDocument /></el-icon>
+              <span>复制链接</span>
+            </el-button>
+          </div>
+        </section>
+      </div>
     </el-dialog>
   </div>
 </template>
@@ -500,43 +508,89 @@ async function toggleShare(value: string | number | boolean) {
 .share-dialog {
   display: flex;
   flex-direction: column;
+  gap: var(--space-4);
+}
+
+.share-dialog-heading {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.share-dialog-icon {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 auto;
+  border-radius: 12px;
+  background: var(--brand-soft);
+  color: var(--brand);
+}
+
+.share-dialog-heading h2 {
+  margin: 0;
+}
+
+.share-dialog-heading h2 {
+  color: var(--text);
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.share-link-panel {
+  display: flex;
+  flex-direction: column;
   gap: var(--space-2);
 }
 
-.share-dialog label {
+.share-link-heading {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+}
+
+.share-link-heading label {
   color: var(--text-2);
   font-size: 13.5px;
   font-weight: 600;
 }
 
-.share-toggle-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-4);
-  padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--panel-2);
+.share-link-heading :deep(.el-switch__core) {
+  border-color: var(--danger-fill);
+  background: var(--danger-fill);
 }
 
-.share-toggle-label {
-  color: var(--text);
-  font-size: 14px;
-  font-weight: 650;
+.share-link-heading :deep(.el-switch.is-checked .el-switch__core) {
+  border-color: var(--success);
+  background: var(--success);
 }
 
-.share-link-row {
+.share-link-control {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: var(--space-3);
+  gap: var(--space-2);
 }
 
-.share-hint {
-  margin: 0;
-  color: var(--text-3);
-  font-size: 12.5px;
+.share-link-control :deep(.el-input__wrapper) {
+  min-height: 40px;
+  border-radius: 9px;
+  background: var(--panel-2);
+  box-shadow: 0 0 0 1px var(--border) inset;
 }
+
+.share-link-control .el-button {
+  min-height: 40px;
+  border-radius: 9px;
+}
+
+.share-link-control .el-button span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
 
 .load-more {
   display: grid;
