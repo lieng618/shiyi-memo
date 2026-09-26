@@ -30,9 +30,13 @@ import java.nio.file.Path;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Slf4j
 @Service
@@ -41,6 +45,8 @@ public class FileService {
 
     private static final DateTimeFormatter YEAR_MONTH = DateTimeFormatter.ofPattern("yyyy/MM");
     private static final long IMAGE_SIZE_PROBE_LIMIT = 40L * 1024 * 1024;
+    private static final Pattern FILE_REFERENCE = Pattern.compile(
+            "(?:/api/files/|/api/public/memos/[^/\\s]+/files/)(\\d+)(?:/|\\b)");
 
     private final FileAssetMapper fileMapper;
     private final MemoMapper memoMapper;
@@ -222,6 +228,34 @@ public class FileService {
                 .eq(FileAsset::getUserId, userId)
                 .eq(FileAsset::getMemoId, memoId));
         assets.forEach(this::removeAsset);
+    }
+
+    /** 正文保存后，删除已从 Markdown 中移除的附件，并释放用户空间。 */
+    @Transactional
+    public void deleteUnreferenced(long userId, long memoId, String contentMd) {
+        Set<Long> referencedIds = referencedFileIds(contentMd);
+        List<FileAsset> assets = fileMapper.selectList(Wrappers.lambdaQuery(FileAsset.class)
+                .eq(FileAsset::getUserId, userId)
+                .eq(FileAsset::getMemoId, memoId));
+        assets.stream()
+                .filter(asset -> !referencedIds.contains(asset.getId()))
+                .forEach(this::removeAsset);
+    }
+
+    static Set<Long> referencedFileIds(String contentMd) {
+        Set<Long> ids = new HashSet<>();
+        if (contentMd == null || contentMd.isBlank()) {
+            return ids;
+        }
+        Matcher matcher = FILE_REFERENCE.matcher(contentMd);
+        while (matcher.find()) {
+            try {
+                ids.add(Long.parseLong(matcher.group(1)));
+            } catch (NumberFormatException ignored) {
+                // 超出 long 范围的文本不是站内附件 id。
+            }
+        }
+        return ids;
     }
 
     private void removeAsset(FileAsset asset) {

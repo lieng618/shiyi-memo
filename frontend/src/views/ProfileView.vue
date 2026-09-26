@@ -204,7 +204,7 @@ async function logout() {
           <div class="row row--split">
             <span class="password-state">
               <el-tag v-if="auth.user?.hasPassword" type="success" size="small" effect="plain">已设置</el-tag>
-              <span v-else class="muted">还没有设置密码，现在登录只能收邮件验证码</span>
+              <span v-else class="muted">还没有设置密码</span>
             </span>
             <el-button :type="auth.user?.hasPassword ? 'default' : 'primary'" @click="openPasswordDialog">
               {{ auth.user?.hasPassword ? '修改密码' : '设置密码' }}

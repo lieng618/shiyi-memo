@@ -1,4 +1,4 @@
-# 拾忆 · 备忘录
+# 拾忆
 
 自用的备忘录 / 文件收集站：写 Markdown 记录、打标签、搜索、置顶，随手传照片、视频、文档。
 后端 Spring Boot 3.5 + MySQL 8，前端 Vue 3 + Vite + TypeScript，登录用邮箱验证码。

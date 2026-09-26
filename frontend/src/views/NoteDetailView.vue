@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft, Delete, Star, StarFilled } from '@element-plus/icons-vue'
 import { memoApi, tagApi } from '@/api'
@@ -22,8 +22,12 @@ const tags = ref<Tag[]>([])
 const saveState = ref<'idle' | 'saving' | 'saved' | 'error'>('idle')
 const savedAt = ref<string | null>(null)
 const titleRef = ref<HTMLInputElement | null>(null)
+const dirty = ref(false)
 
 let applyingRemote = false
+let changeVersion = 0
+let savedVersion = 0
+let saveQueue: Promise<void> = Promise.resolve()
 
 const tagOptions = computed(() => tags.value.map((tag) => tag.name))
 const saveLabel = computed(() => {
@@ -43,6 +47,8 @@ const scheduleSave = debounce(() => void save(), 800)
 
 watch([title, contentMd], () => {
   if (detail.value && !applyingRemote) {
+    changeVersion += 1
+    dirty.value = true
     scheduleSave()
   }
 })
@@ -57,6 +63,13 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKeydown)
   scheduleSave.cancel()
+})
+
+onBeforeRouteLeave(async () => {
+  scheduleSave.cancel()
+  if (dirty.value) {
+    await save()
+  }
 })
 
 function onKeydown(event: KeyboardEvent) {
@@ -84,6 +97,9 @@ async function loadDetail() {
     title.value = data.title
     contentMd.value = data.contentMd ?? ''
     tagNames.value = data.tags.map((tag) => tag.name)
+    changeVersion = 0
+    savedVersion = 0
+    dirty.value = false
     saveState.value = 'idle'
     await nextTick()
     applyingRemote = false
@@ -98,9 +114,15 @@ async function refreshDetail() {
   detail.value = await memoApi.get(noteId.value)
 }
 
-async function save() {
+function save() {
+  saveQueue = saveQueue.then(() => persist())
+  return saveQueue
+}
+
+async function persist() {
   const target = detail.value
   if (!target) return
+  const version = changeVersion
   saveState.value = 'saving'
   try {
     const updated = await memoApi.update(target.id, {
@@ -111,6 +133,8 @@ async function save() {
     detail.value = updated
     savedAt.value = formatFull(updated.updatedAt)
     saveState.value = 'saved'
+    savedVersion = Math.max(savedVersion, version)
+    dirty.value = savedVersion < changeVersion
     void loadTags()
   } catch {
     saveState.value = 'error'
@@ -118,6 +142,8 @@ async function save() {
 }
 
 function onTagsChanged() {
+  changeVersion += 1
+  dirty.value = true
   scheduleSave.cancel()
   void save()
 }

@@ -34,7 +34,7 @@ public class MailService {
             return;
         }
         String text = """
-                你正在登录「拾忆备忘录」。
+                你正在登录「拾忆」。
 
                 验证码：%s
                 有效期：%d 分钟
@@ -46,7 +46,7 @@ public class MailService {
             MimeMessageHelper helper = new MimeMessageHelper(message, false, StandardCharsets.UTF_8.name());
             String from = properties.getMail().getFrom();
             helper.setTo(email);
-            helper.setSubject("【拾忆备忘录】登录验证码 " + code);
+            helper.setSubject("【拾忆】登录验证码 " + code);
             helper.setText(text, false);
             if (from != null && !from.isBlank()) {
                 helper.setFrom(from);
@@ -75,7 +75,7 @@ public class MailService {
             MimeMessage message = mailSenderProvider.getObject().createMimeMessage();
             MimeMessageHelper helper = new MimeMessageHelper(message, false, StandardCharsets.UTF_8.name());
             helper.setTo(email);
-            helper.setSubject("【拾忆备忘录】登录密码已" + action);
+            helper.setSubject("【拾忆】登录密码已" + action);
             helper.setText(text, false);
             String from = properties.getMail().getFrom();
             if (from != null && !from.isBlank()) {

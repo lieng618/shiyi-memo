@@ -126,6 +126,9 @@ public class MemoService {
             patch.setPinnedAt(pinned ? (memo.getPinnedAt() != null ? memo.getPinnedAt() : LocalDateTime.now()) : null);
         }
         memoMapper.updateById(patch);
+        if (content != null) {
+            fileService.deleteUnreferenced(userId, memoId, content);
+        }
         if (request.tagNames() != null) {
             syncTags(userId, memo.getId(), request.tagNames());
         }

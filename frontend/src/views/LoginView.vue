@@ -239,7 +239,6 @@ function skipPasswordSetup() {
               name="email"
               autocomplete="email"
               inputmode="email"
-              placeholder="you@example.com"
               :aria-invalid="Boolean(emailError)"
               :aria-describedby="emailError ? 'login-email-error' : undefined"
               :disabled="submitting"
@@ -258,7 +257,6 @@ function skipPasswordSetup() {
                 autocomplete="one-time-code"
                 inputmode="numeric"
                 maxlength="8"
-                placeholder="6 位数字"
                 :aria-invalid="Boolean(codeError)"
                 :aria-describedby="codeError ? 'login-code-error' : undefined"
                 :disabled="submitting"
@@ -279,7 +277,6 @@ function skipPasswordSetup() {
                 :type="showPassword ? 'text' : 'password'"
                 name="password"
                 autocomplete="current-password"
-                placeholder="登录密码"
                 :aria-invalid="Boolean(passwordError)"
                 :aria-describedby="passwordError ? 'login-password-error' : undefined"
                 :disabled="submitting"
@@ -336,7 +333,6 @@ function skipPasswordSetup() {
             type="password"
             show-password
             maxlength="72"
-            placeholder="至少 8 位"
             autocomplete="new-password"
             @keyup.enter="saveInitialPassword"
           />

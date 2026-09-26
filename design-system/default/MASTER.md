@@ -6,7 +6,7 @@
 
 ---
 
-**Project:** 拾忆备忘录
+**Project:** 拾忆
 **Generated:** 2026-09-24 12:00:24
 **Category:** Notes & Writing App
 **Design Dials:** Variance 4/10 (Balanced / Modern) | Motion 4/10 (Standard) | Density 6/10 (Standard)
