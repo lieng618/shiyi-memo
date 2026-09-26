@@ -20,14 +20,26 @@ public final class MemoDtos {
 
     public record MemoSummary(Long id, String title, String excerpt, Boolean pinned,
                               List<TagDtos.TagDto> tags, Long fileCount, String coverUrl,
+                              Boolean shareEnabled, String shareToken,
                               LocalDateTime createdAt, LocalDateTime updatedAt) {
     }
 
     public record MemoDetail(Long id, String title, String contentMd, Boolean pinned,
                              List<TagDtos.TagDto> tags, List<FileDtos.FileDto> files,
+                             Boolean shareEnabled, String shareToken,
                              LocalDateTime createdAt, LocalDateTime updatedAt) {
     }
 
     public record PinRequest(boolean pinned) {
+    }
+
+    public record ShareRequest(boolean enabled) {
+    }
+
+    public record ShareResponse(boolean enabled, String token) {
+    }
+
+    public record PublicMemoDetail(Long id, String title, String contentMd, Long ownerId,
+                                   String ownerName, LocalDateTime updatedAt) {
     }
 }

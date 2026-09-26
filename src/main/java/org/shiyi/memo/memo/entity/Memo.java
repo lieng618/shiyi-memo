@@ -20,6 +20,9 @@ public class Memo {
     private String contentMd;
     private Boolean pinned;
     private LocalDateTime pinnedAt;
+    private String shareToken;
+    private Boolean shareEnabled;
+    private LocalDateTime sharedAt;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }

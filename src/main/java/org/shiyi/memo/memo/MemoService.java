@@ -16,6 +16,8 @@ import org.shiyi.memo.tag.TagService;
 import org.shiyi.memo.tag.dto.TagDtos;
 import org.shiyi.memo.tag.entity.Tag;
 import org.shiyi.memo.tag.mapper.TagMapper;
+import org.shiyi.memo.user.UserService;
+import org.shiyi.memo.user.entity.AppUser;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -28,6 +30,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Service
@@ -39,6 +42,7 @@ public class MemoService {
     private final FileAssetMapper fileMapper;
     private final TagService tagService;
     private final FileService fileService;
+    private final UserService userService;
 
     public PageResult<MemoDtos.MemoSummary> list(long userId, String keyword, Collection<Long> tagIds,
                                                  Boolean pinned, long page, long size) {
@@ -75,6 +79,8 @@ public class MemoService {
                         tagMap.getOrDefault(memo.getId(), List.of()),
                         fileCounts.getOrDefault(memo.getId(), 0L),
                         covers.get(memo.getId()),
+                        Boolean.TRUE.equals(memo.getShareEnabled()),
+                        memo.getShareToken(),
                         memo.getCreatedAt(), memo.getUpdatedAt()))
                 .toList();
         return PageResult.of(records, result.getTotal(), page, size);
@@ -86,6 +92,7 @@ public class MemoService {
         List<FileDtos.FileDto> files = fileService.listByMemo(userId, memoId);
         return new MemoDtos.MemoDetail(memo.getId(), memo.getTitle(), memo.getContentMd(),
                 Boolean.TRUE.equals(memo.getPinned()), tags, files,
+                Boolean.TRUE.equals(memo.getShareEnabled()), memo.getShareToken(),
                 memo.getCreatedAt(), memo.getUpdatedAt());
     }
 
@@ -133,6 +140,51 @@ public class MemoService {
         patch.setPinned(pinned);
         patch.setPinnedAt(pinned ? LocalDateTime.now() : null);
         memoMapper.updateById(patch);
+    }
+
+    @Transactional
+    public MemoDtos.ShareResponse share(long userId, long memoId, boolean enabled) {
+        Memo memo = requireOwned(userId, memoId);
+        Memo patch = new Memo();
+        patch.setId(memo.getId());
+        patch.setShareEnabled(enabled);
+
+        String token = memo.getShareToken();
+        if (enabled) {
+            if (!StringUtils.hasText(token)) {
+                token = UUID.randomUUID().toString().replace("-", "");
+                patch.setShareToken(token);
+            }
+            patch.setSharedAt(LocalDateTime.now());
+        }
+        memoMapper.updateById(patch);
+        return new MemoDtos.ShareResponse(enabled, token);
+    }
+
+    /**
+     * 公开读取只认有效分享令牌。令牌存在但已关闭时返回 403，前端可以明确展示“没有权限”。
+     */
+    public Memo requirePublicShare(String rawToken) {
+        if (!StringUtils.hasText(rawToken)) {
+            throw ApiException.notFound("分享链接无效");
+        }
+        Memo memo = memoMapper.selectOne(Wrappers.lambdaQuery(Memo.class)
+                .eq(Memo::getShareToken, rawToken.trim())
+                .last("limit 1"));
+        if (memo == null) {
+            throw ApiException.notFound("分享链接无效");
+        }
+        if (!Boolean.TRUE.equals(memo.getShareEnabled())) {
+            throw ApiException.forbidden("分享已关闭，暂无访问权限");
+        }
+        return memo;
+    }
+
+    public MemoDtos.PublicMemoDetail publicDetail(String token) {
+        Memo memo = requirePublicShare(token);
+        AppUser owner = userService.get(memo.getUserId());
+        return new MemoDtos.PublicMemoDetail(memo.getId(), memo.getTitle(), memo.getContentMd(),
+                owner.getId(), owner.getNickname(), memo.getUpdatedAt());
     }
 
     /** 删除就是真删：附件、磁盘文件、标签关联一起清掉 */

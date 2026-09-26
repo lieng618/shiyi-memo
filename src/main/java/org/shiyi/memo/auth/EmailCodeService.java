@@ -20,7 +20,7 @@ import java.time.LocalDateTime;
 import java.util.Optional;
 
 /**
- * 邮箱验证码的发送与校验。登录、设置密码、修改密码都复用这一套。
+ * 邮箱验证码的发送与校验，目前用于邮箱登录。
  */
 @Slf4j
 @Service

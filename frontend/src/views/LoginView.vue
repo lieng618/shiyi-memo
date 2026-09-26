@@ -27,6 +27,12 @@ const countdown = ref(0)
 const devCode = ref('')
 const mailEnabled = ref(true)
 const emailRef = ref<HTMLInputElement | null>(null)
+const setupOpen = ref(false)
+const setupSaving = ref(false)
+const setupError = ref('')
+const setupPassword = ref('')
+const setupConfirm = ref('')
+const postLoginRedirect = ref('/notes')
 
 let timer: ReturnType<typeof setInterval> | undefined
 
@@ -106,15 +112,23 @@ async function submit() {
 
   submitting.value = true
   try {
+    const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '/notes'
     if (mode.value === 'code') {
-      await auth.login(email.value.trim(), code.value.trim())
+      const user = await auth.login(email.value.trim(), code.value.trim())
+      if (!user.hasPassword) {
+        postLoginRedirect.value = redirect
+        setupPassword.value = ''
+        setupConfirm.value = ''
+        setupError.value = ''
+        setupOpen.value = true
+        return
+      }
     } else {
       const result = await authApi.loginWithPassword(email.value.trim(), password.value)
       auth.user = result.user
       auth.initialized = true
     }
-    const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '/notes'
-    await router.replace(redirect)
+    await finishLogin()
   } catch (error) {
     formError.value = error instanceof Error ? error.message : '登录失败，请重试'
     if (mode.value === 'code') {
@@ -123,6 +137,37 @@ async function submit() {
   } finally {
     submitting.value = false
   }
+}
+
+async function finishLogin() {
+  await router.replace(postLoginRedirect.value)
+}
+
+async function saveInitialPassword() {
+  setupError.value = ''
+  if (setupPassword.value.length < 8) {
+    setupError.value = '密码至少 8 位'
+    return
+  }
+  if (setupPassword.value !== setupConfirm.value) {
+    setupError.value = '两次输入的密码不一致'
+    return
+  }
+  setupSaving.value = true
+  try {
+    auth.user = await authApi.changePassword({ newPassword: setupPassword.value })
+    setupOpen.value = false
+    await finishLogin()
+  } catch (error) {
+    setupError.value = error instanceof Error ? error.message : '密码设置失败'
+  } finally {
+    setupSaving.value = false
+  }
+}
+
+function skipPasswordSetup() {
+  setupOpen.value = false
+  void finishLogin()
 }
 </script>
 
@@ -271,6 +316,51 @@ async function submit() {
         </div>
       </main>
     </section>
+
+    <el-dialog
+      v-model="setupOpen"
+      title="设置登录密码"
+      width="min(440px, 92vw)"
+      align-center
+      :close-on-click-modal="false"
+      :close-on-press-escape="false"
+      :show-close="false"
+    >
+      <div class="setup-form">
+        <p class="setup-copy">设置后可直接用邮箱和密码登录，也可以现在跳过。</p>
+        <div class="field">
+          <label for="setup-password">新密码</label>
+          <el-input
+            id="setup-password"
+            v-model="setupPassword"
+            type="password"
+            show-password
+            maxlength="72"
+            placeholder="至少 8 位"
+            autocomplete="new-password"
+            @keyup.enter="saveInitialPassword"
+          />
+        </div>
+        <div class="field">
+          <label for="setup-confirm">确认密码</label>
+          <el-input
+            id="setup-confirm"
+            v-model="setupConfirm"
+            type="password"
+            show-password
+            maxlength="72"
+            autocomplete="new-password"
+            @keyup.enter="saveInitialPassword"
+          />
+        </div>
+        <p v-if="setupError" class="error" role="alert">{{ setupError }}</p>
+      </div>
+
+      <template #footer>
+        <el-button :disabled="setupSaving" @click="skipPasswordSetup">跳过</el-button>
+        <el-button type="primary" :loading="setupSaving" @click="saveInitialPassword">设置并进入</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -679,6 +769,18 @@ html.dark .brand-panel {
   background: var(--panel-2);
   color: var(--text-2);
   font-size: 13px;
+}
+
+.setup-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.setup-copy {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 13.5px;
 }
 
 @media (max-width: 860px) {

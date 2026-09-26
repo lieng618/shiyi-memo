@@ -1,7 +1,18 @@
 <script setup lang="ts">
-import { computed, nextTick, ref } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { ChatLineSquare, Finished, Link, List, Paperclip, Picture } from '@element-plus/icons-vue'
+import {
+  Brush,
+  ChatLineSquare,
+  Finished,
+  Link,
+  List,
+  MagicStick,
+  Paperclip,
+  Picture,
+  RefreshLeft,
+  RefreshRight,
+} from '@element-plus/icons-vue'
 import type { Component } from 'vue'
 import { fileApi } from '@/api'
 import type { FileAsset } from '@/types'
@@ -22,11 +33,39 @@ const textarea = ref<HTMLTextAreaElement | null>(null)
 const imageInput = ref<HTMLInputElement | null>(null)
 const fileInput = ref<HTMLInputElement | null>(null)
 const uploading = ref(false)
+const undoStack = ref<string[]>([])
+const redoStack = ref<string[]>([])
+const selectedFontSize = ref<number | ''>('')
+const colorPopover = ref(false)
+const customColor = ref('#d97706')
+let lastValue = props.modelValue
+let applyingHistory = false
 
 const value = computed({
   get: () => props.modelValue,
   set: (next: string) => emit('update:modelValue', next),
 })
+
+const canUndo = computed(() => undoStack.value.length > 0)
+const canRedo = computed(() => redoStack.value.length > 0)
+
+watch(
+  () => props.modelValue,
+  (next) => {
+    if (applyingHistory) {
+      applyingHistory = false
+      lastValue = next
+      return
+    }
+    if (next === lastValue) return
+    undoStack.value.push(lastValue)
+    if (undoStack.value.length > 100) {
+      undoStack.value.shift()
+    }
+    redoStack.value = []
+    lastValue = next
+  },
+)
 
 function surround(before: string, after = before, placeholder = '') {
   const el = textarea.value
@@ -60,6 +99,115 @@ function insert(text: string) {
   const position = el ? el.selectionEnd : value.value.length
   value.value = value.value.slice(0, position) + text + value.value.slice(position)
   void nextTick(() => el?.focus())
+}
+
+function restoreValue(next: string) {
+  applyingHistory = true
+  value.value = next
+  lastValue = next
+  void nextTick(() => {
+    const el = textarea.value
+    el?.focus()
+    el?.setSelectionRange(next.length, next.length)
+  })
+}
+
+function undo() {
+  const next = undoStack.value.pop()
+  if (next === undefined) return
+  redoStack.value.push(value.value)
+  restoreValue(next)
+}
+
+function redo() {
+  const next = redoStack.value.pop()
+  if (next === undefined) return
+  undoStack.value.push(value.value)
+  restoreValue(next)
+}
+
+function onEditorKeydown(event: KeyboardEvent) {
+  if (!(event.ctrlKey || event.metaKey) || event.altKey) return
+  const key = event.key.toLowerCase()
+  if (key === 'z') {
+    event.preventDefault()
+    if (event.shiftKey) {
+      redo()
+    } else {
+      undo()
+    }
+  } else if (key === 'y') {
+    event.preventDefault()
+    redo()
+  }
+}
+
+function applySelectedFontSize(size: number | string) {
+  if (size === '') return
+  surround(`<span style="font-size: ${Number(size)}px;">`, '</span>', '文字')
+  selectedFontSize.value = ''
+}
+
+function applyColor(color: string) {
+  surround(`<span style="color: ${color};">`, '</span>', '彩色文字')
+  colorPopover.value = false
+}
+
+function formatDocument() {
+  const formatted = formatMarkdown(value.value)
+  if (formatted === value.value) {
+    ElMessage.info('当前内容已经很整齐了')
+    return
+  }
+  value.value = formatted
+  void nextTick(() => textarea.value?.focus())
+}
+
+function formatMarkdown(source: string) {
+  if (!source.trim()) return source
+  const lines = source
+    .replace(/\r\n?/g, '\n')
+    .split('\n')
+    .map((line) => line.replace(/[ \t]+$/, ''))
+  const output: string[] = []
+  let inFence = false
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index]
+    const trimmed = line.trim()
+    if (/^\s*(```|~~~)/.test(line)) {
+      if (!inFence && output.at(-1) && output.at(-1) !== '') output.push('')
+      output.push(line)
+      inFence = !inFence
+      continue
+    }
+    if (inFence) {
+      output.push(line)
+      continue
+    }
+    if (!trimmed) {
+      if (output.at(-1) !== undefined && output.at(-1) !== '') output.push('')
+      continue
+    }
+
+    const currentList = /^(?:[-*+]\s|\d+[.)]\s)/.test(trimmed)
+    const previous = output.at(-1) ?? ''
+    const previousList = /^(?:[-*+]\s|\d+[.)]\s)/.test(previous)
+    const startsBlock = /^(?:#{1,6}\s|>\s?|[-*+]\s|\d+[.)]\s)/.test(trimmed)
+    if (startsBlock && previous && previous !== '' && !(currentList && previousList)) {
+      output.push('')
+    } else if (previousList && !currentList && previous !== '') {
+      output.push('')
+    }
+    output.push(line)
+
+    const next = lines[index + 1]?.trim()
+    if (/^#{1,6}\s/.test(trimmed) && next) {
+      output.push('')
+    }
+  }
+
+  return output.join('\n').replace(/^\n+|\n+$/g, '') + '\n'
 }
 
 async function pickImage() {
@@ -110,11 +258,22 @@ const toolbar: ToolbarItem[] = [
   { key: 'code', text: '{}', title: '行内代码', run: () => surround('`', '`', 'code') },
   { key: 'link', icon: Link, title: '链接', run: () => surround('[', '](https://)', '链接文字') },
 ]
+
+const fontSizes = [12, 14, 16, 18, 20, 24, 32]
+const colors = ['#1c1917', '#57534e', '#b91c1c', '#d97706', '#15803d', '#2563eb', '#7c3aed', '#db2777']
 </script>
 
 <template>
   <div class="editor">
     <div class="editor-toolbar" role="toolbar" aria-label="Markdown 格式">
+      <button type="button" title="撤销（Ctrl+Z）" aria-label="撤销" :disabled="!canUndo" @click="undo">
+        <el-icon :size="15"><RefreshLeft /></el-icon>
+      </button>
+      <button type="button" title="重做（Ctrl+Shift+Z）" aria-label="重做" :disabled="!canRedo" @click="redo">
+        <el-icon :size="15"><RefreshRight /></el-icon>
+      </button>
+      <span class="toolbar-divider" aria-hidden="true" />
+
       <button
         v-for="item in toolbar"
         :key="item.key"
@@ -132,6 +291,46 @@ const toolbar: ToolbarItem[] = [
       </button>
       <button type="button" title="上传文件" aria-label="上传文件" :disabled="uploading" @click="pickFile">
         <el-icon :size="15"><Paperclip /></el-icon>
+      </button>
+      <span class="toolbar-divider" aria-hidden="true" />
+
+      <el-select
+        v-model="selectedFontSize"
+        class="font-size-select"
+        size="small"
+        placeholder="字号"
+        aria-label="字体大小"
+        @change="applySelectedFontSize"
+      >
+        <el-option v-for="size in fontSizes" :key="size" :label="`${size}px`" :value="size" />
+      </el-select>
+
+      <el-popover v-model:visible="colorPopover" placement="bottom-start" :width="190" trigger="click">
+        <template #reference>
+          <button type="button" title="字体颜色" aria-label="字体颜色">
+            <el-icon :size="15"><Brush /></el-icon>
+          </button>
+        </template>
+        <div class="color-palette">
+          <button
+            v-for="color in colors"
+            :key="color"
+            type="button"
+            class="color-swatch"
+            :style="{ backgroundColor: color }"
+            :title="color"
+            :aria-label="`使用颜色 ${color}`"
+            @click="applyColor(color)"
+          />
+          <label class="custom-color" title="自定义颜色">
+            <input v-model="customColor" type="color" aria-label="自定义颜色" @change="applyColor(customColor)" />
+            <span>自定义</span>
+          </label>
+        </div>
+      </el-popover>
+
+      <button type="button" title="整理 Markdown 段落" aria-label="整理 Markdown 段落" @click="formatDocument">
+        <el-icon :size="15"><MagicStick /></el-icon>
       </button>
       <input ref="imageInput" type="file" accept="image/*" hidden @change="onFilePicked($event, 'image')" />
       <input ref="fileInput" type="file" hidden @change="onFilePicked($event, 'file')" />
@@ -153,6 +352,7 @@ const toolbar: ToolbarItem[] = [
         class="editor-input"
         placeholder="随手写点什么，支持 Markdown：# 标题、- 列表、**加粗**、贴图直接上传…"
         spellcheck="false"
+        @keydown="onEditorKeydown"
       />
       <div v-if="effectiveMode !== 'edit'" class="editor-preview">
         <MarkdownView v-if="value.trim()" :content="value" />
@@ -219,6 +419,62 @@ const toolbar: ToolbarItem[] = [
 
 .editor-toolbar .spacer {
   flex: 1;
+}
+
+.toolbar-divider {
+  width: 1px;
+  height: 20px;
+  margin: 0 3px;
+  background: var(--border);
+}
+
+.font-size-select {
+  width: 84px;
+}
+
+.font-size-select :deep(.el-select__wrapper) {
+  min-height: 30px;
+  border-radius: 8px;
+}
+
+.color-palette {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+}
+
+.color-swatch {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 2px solid var(--panel);
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px var(--border-strong);
+  cursor: pointer;
+}
+
+.color-swatch:hover {
+  transform: scale(1.08);
+}
+
+.custom-color {
+  display: flex;
+  grid-column: 1 / -1;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-2);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.custom-color input {
+  width: 34px;
+  height: 30px;
+  padding: 2px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--panel);
+  cursor: pointer;
 }
 
 .editor-body {

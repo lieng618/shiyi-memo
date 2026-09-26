@@ -69,12 +69,7 @@ public final class UserDtos {
     public record UpdateAvatarRequest(@NotNull Long fileId) {
     }
 
-    /**
-     * 设置 / 修改登录密码。
-     * 已有密码时 currentPassword 与 code 二选一；没设过密码时必须给 code（邮箱验证码）。
-     */
-    public record UpdatePasswordRequest(@Size(max = 72) String currentPassword,
-                                        @Size(max = 16) String code,
-                                        @NotBlank @Size(max = 72) String newPassword) {
+    /** 已登录用户直接设置新密码，不再重复校验邮箱验证码。 */
+    public record UpdatePasswordRequest(@NotBlank @Size(min = 8, max = 72) String newPassword) {
     }
 }

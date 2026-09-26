@@ -1,6 +1,12 @@
 import axios, { type AxiosError } from 'axios'
 import { ElMessage } from 'element-plus'
 
+declare module 'axios' {
+  interface AxiosRequestConfig {
+    skipAuthRedirect?: boolean
+  }
+}
+
 export const http = axios.create({
   baseURL: '/api',
   timeout: 30_000,
@@ -21,7 +27,9 @@ http.interceptors.response.use(
     const status = error.response?.status
     const message = error.response?.data?.message ?? error.message ?? '请求失败'
     if (status === 401) {
-      onUnauthorized.handler()
+      if (!error.config?.skipAuthRedirect) {
+        onUnauthorized.handler()
+      }
       return Promise.reject(new Error(message))
     }
     // 401 之外统一弹提示，调用方一般不需要再处理

@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
-import { Notebook, Paperclip, Search, Star, StarFilled } from '@element-plus/icons-vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { Link, Notebook, Paperclip, Search, Star, StarFilled } from '@element-plus/icons-vue'
 import { memoApi, tagApi } from '@/api'
 import type { MemoSummary, Tag } from '@/types'
 import { formatTime } from '@/utils/format'
+import { copyText } from '@/utils/clipboard'
 import { useNotesFilter } from '@/composables/useNotesFilter'
 import { useCreateNote } from '@/composables/useCreateNote'
 
@@ -21,6 +22,10 @@ const page = ref(1)
 const loading = ref(false)
 const loadingMore = ref(false)
 const tags = ref<Tag[]>([])
+const shareDialog = ref(false)
+const shareNote = ref<MemoSummary | null>(null)
+const shareUrl = ref('')
+const shareLoading = ref(false)
 /** 一条笔记都没有时不显示搜索框（搜索无结果时仍保留，方便改关键词） */
 const hasAnyNotes = ref(false)
 
@@ -77,6 +82,61 @@ async function togglePin(note: MemoSummary) {
 async function openNote(id: number) {
   await router.push(`/notes/${id}`)
 }
+
+async function openShare(note: MemoSummary) {
+  shareLoading.value = true
+  try {
+    let token = note.shareToken
+    if (!note.shareEnabled || !token) {
+      const result = await memoApi.share(note.id, true)
+      token = result.token
+      note.shareEnabled = true
+      note.shareToken = token
+    }
+    if (!token) {
+      throw new Error('分享链接生成失败')
+    }
+    shareNote.value = note
+    shareUrl.value = `${window.location.origin}/share/${token}`
+    shareDialog.value = true
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '分享链接生成失败')
+  } finally {
+    shareLoading.value = false
+  }
+}
+
+async function copyShareUrl() {
+  try {
+    await copyText(shareUrl.value)
+    ElMessage.success('分享链接已复制')
+  } catch {
+    ElMessage.error('复制失败，请手动复制链接')
+  }
+}
+
+async function closeShare() {
+  const note = shareNote.value
+  if (!note) return
+  try {
+    await ElMessageBox.confirm('关闭后，已发出的链接将无法继续查看。', '关闭分享', {
+      confirmButtonText: '关闭分享',
+      cancelButtonText: '取消',
+      type: 'warning',
+    })
+  } catch {
+    return
+  }
+  shareLoading.value = true
+  try {
+    await memoApi.share(note.id, false)
+    note.shareEnabled = false
+    shareDialog.value = false
+    ElMessage.success('分享已关闭')
+  } finally {
+    shareLoading.value = false
+  }
+}
 </script>
 
 <template>
@@ -130,7 +190,7 @@ async function openNote(id: number) {
           <li
             v-for="(note, index) in notes"
             :key="note.id"
-            v-memo="[note.id, note.title, note.excerpt, note.pinned, note.updatedAt]"
+            v-memo="[note.id, note.title, note.excerpt, note.pinned, note.shareEnabled, note.updatedAt]"
             class="stagger-item"
             :style="{ animationDelay: `${Math.min(index, 10) * 30}ms` }"
           >
@@ -167,6 +227,18 @@ async function openNote(id: number) {
 
               <button
                 type="button"
+                class="row-action share-btn"
+                :class="{ on: note.shareEnabled }"
+                :aria-label="`分享 ${note.title || '无标题'}`"
+                :title="note.shareEnabled ? '管理分享' : '分享'"
+                :disabled="shareLoading"
+                @click.stop="openShare(note)"
+              >
+                <el-icon><Link /></el-icon>
+              </button>
+
+              <button
+                type="button"
                 class="pin-btn"
                 :class="{ on: note.pinned }"
                 :aria-label="note.pinned ? `取消置顶 ${note.title || '无标题'}` : `置顶 ${note.title || '无标题'}`"
@@ -185,6 +257,27 @@ async function openNote(id: number) {
         </div>
       </template>
     </div>
+
+    <el-dialog
+      v-model="shareDialog"
+      :title="`分享「${shareNote?.title || '无标题'}」`"
+      width="min(520px, 92vw)"
+      align-center
+    >
+      <div class="share-dialog">
+        <label for="share-link">公开链接</label>
+        <div class="share-link-row">
+          <el-input id="share-link" :model-value="shareUrl" readonly />
+          <el-button type="primary" @click="copyShareUrl">复制链接</el-button>
+        </div>
+        <p class="share-hint">任何拿到链接的人都可以只读查看，不需要登录。</p>
+      </div>
+
+      <template #footer>
+        <el-button type="danger" plain :loading="shareLoading" @click="closeShare">关闭分享</el-button>
+        <el-button @click="shareDialog = false">完成</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -368,7 +461,8 @@ async function openNote(id: number) {
   gap: 4px;
 }
 
-.pin-btn {
+.pin-btn,
+.row-action {
   display: grid;
   place-items: center;
   width: 48px;
@@ -379,13 +473,47 @@ async function openNote(id: number) {
   transition: background var(--dur) var(--ease-out), color var(--dur) var(--ease-out);
 }
 
-.pin-btn:hover {
+.pin-btn:hover,
+.row-action:hover {
   background: var(--panel-hover);
   color: var(--text);
 }
 
 .pin-btn.on {
   color: var(--brand-hover);
+}
+
+.share-btn.on {
+  color: var(--brand-hover);
+}
+
+.share-btn:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+
+.share-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.share-dialog label {
+  color: var(--text-2);
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.share-link-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-3);
+}
+
+.share-hint {
+  margin: 0;
+  color: var(--text-3);
+  font-size: 12.5px;
 }
 
 .load-more {

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { SwitchButton } from '@element-plus/icons-vue'
@@ -26,14 +26,7 @@ const quota = ref<Quota | null>(null)
 const pwdOpen = ref(false)
 const pwdSaving = ref(false)
 const pwdError = ref('')
-const verifyMode = ref<'current' | 'code'>('code')
-const sendingCode = ref(false)
-const codeCountdown = ref(0)
-const pwdForm = reactive({ currentPassword: '', code: '', newPassword: '', confirm: '' })
-
-let codeTimer: ReturnType<typeof setInterval> | undefined
-
-onBeforeUnmount(() => clearInterval(codeTimer))
+const pwdForm = reactive({ newPassword: '', confirm: '' })
 
 onMounted(async () => {
   nickname.value = auth.user?.nickname ?? ''
@@ -109,49 +102,15 @@ async function saveNickname() {
 // ---------------- 登录密码 ----------------
 
 function openPasswordDialog() {
-  pwdForm.currentPassword = ''
-  pwdForm.code = ''
   pwdForm.newPassword = ''
   pwdForm.confirm = ''
   pwdError.value = ''
-  verifyMode.value = auth.user?.hasPassword ? 'current' : 'code'
   pwdOpen.value = true
-}
-
-function startCodeCountdown(seconds = 60) {
-  codeCountdown.value = seconds
-  clearInterval(codeTimer)
-  codeTimer = setInterval(() => {
-    codeCountdown.value -= 1
-    if (codeCountdown.value <= 0) {
-      clearInterval(codeTimer)
-    }
-  }, 1000)
-}
-
-async function sendVerifyCode() {
-  pwdError.value = ''
-  const email = auth.user?.email
-  if (!email) return
-  sendingCode.value = true
-  try {
-    const result = await authApi.sendCode(email)
-    if (result.devCode) {
-      pwdForm.code = result.devCode
-    }
-    startCodeCountdown(60)
-    ElMessage.success('验证码已发送到你的邮箱')
-  } catch (error) {
-    pwdError.value = error instanceof Error ? error.message : '验证码发送失败'
-  } finally {
-    sendingCode.value = false
-  }
 }
 
 async function savePassword() {
   pwdError.value = ''
   const hasPassword = Boolean(auth.user?.hasPassword)
-  const byCode = !hasPassword || verifyMode.value === 'code'
 
   if (pwdForm.newPassword.length < 8) {
     pwdError.value = '新密码至少 8 位'
@@ -161,20 +120,10 @@ async function savePassword() {
     pwdError.value = '两次输入的新密码不一致'
     return
   }
-  if (!byCode && !pwdForm.currentPassword) {
-    pwdError.value = '请输入当前密码'
-    return
-  }
-  if (byCode && !pwdForm.code.trim()) {
-    pwdError.value = '请填写邮箱验证码'
-    return
-  }
 
   pwdSaving.value = true
   try {
     auth.user = await authApi.changePassword({
-      currentPassword: byCode ? undefined : pwdForm.currentPassword,
-      code: byCode ? pwdForm.code.trim() : undefined,
       newPassword: pwdForm.newPassword,
     })
     ElMessage.success(hasPassword ? '密码已修改' : '密码已设置')
@@ -338,46 +287,6 @@ async function logout() {
           />
         </div>
 
-        <div v-if="auth.user?.hasPassword" class="field">
-          <span class="label-text">身份验证</span>
-          <el-radio-group v-model="verifyMode" aria-label="身份验证方式">
-            <el-radio-button value="current">当前密码</el-radio-button>
-            <el-radio-button value="code">邮箱验证码</el-radio-button>
-          </el-radio-group>
-        </div>
-
-        <div v-if="auth.user?.hasPassword && verifyMode === 'current'" class="field">
-          <label for="pwd-current">当前密码</label>
-          <el-input
-            id="pwd-current"
-            v-model="pwdForm.currentPassword"
-            type="password"
-            show-password
-            maxlength="72"
-            autocomplete="current-password"
-          />
-        </div>
-
-        <div v-else class="field">
-          <label for="pwd-code">邮箱验证码</label>
-          <div class="code-row">
-            <el-input
-              id="pwd-code"
-              v-model="pwdForm.code"
-              maxlength="8"
-              inputmode="numeric"
-              placeholder="6 位数字"
-            />
-            <el-button
-              :disabled="codeCountdown > 0 || sendingCode"
-              :loading="sendingCode"
-              @click="sendVerifyCode"
-            >
-              {{ codeCountdown > 0 ? `${codeCountdown}s` : '获取验证码' }}
-            </el-button>
-          </div>
-        </div>
-
         <p v-if="pwdError" class="error" role="alert">{{ pwdError }}</p>
       </div>
 
@@ -533,12 +442,6 @@ async function logout() {
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
-}
-
-.code-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: var(--space-3);
 }
 
 .row input {

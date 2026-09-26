@@ -6,8 +6,10 @@ import type {
   MemoDetail,
   MemoSummary,
   PageResult,
+  PublicMemoDetail,
   Quota,
   SendCodeResponse,
+  ShareResponse,
   Tag,
   User,
   UserMessage,
@@ -20,11 +22,11 @@ export const authApi = {
     http.post<LoginResponse>('/auth/login', { email, code }).then((r) => r.data),
   loginWithPassword: (email: string, password: string) =>
     http.post<LoginResponse>('/auth/login/password', { email, password }).then((r) => r.data),
-  /** 设置 / 修改登录密码：当前密码 或 邮箱验证码，二选一 */
-  changePassword: (payload: { currentPassword?: string; code?: string; newPassword: string }) =>
+  /** 登录状态下直接设置 / 修改登录密码 */
+  changePassword: (payload: { newPassword: string }) =>
     http.put<User>('/auth/password', payload).then((r) => r.data),
   logout: () => http.post('/auth/logout').then(() => undefined),
-  me: () => http.get<User>('/auth/me').then((r) => r.data),
+  me: () => http.get<User>('/auth/me', { skipAuthRedirect: true }).then((r) => r.data),
 }
 
 export const memoApi = {
@@ -43,7 +45,14 @@ export const memoApi = {
   update: (id: number, payload: { title?: string; contentMd?: string; tagNames?: string[]; pinned?: boolean }) =>
     http.put<MemoDetail>(`/memos/${id}`, payload).then((r) => r.data),
   pin: (id: number, pinned: boolean) => http.post(`/memos/${id}/pin`, { pinned }).then(() => undefined),
+  share: (id: number, enabled = true) =>
+    http.post<ShareResponse>(`/memos/${id}/share`, { enabled }).then((r) => r.data),
   remove: (id: number) => http.delete(`/memos/${id}`).then(() => undefined),
+}
+
+export const shareApi = {
+  get: (token: string) =>
+    http.get<PublicMemoDetail>(`/public/memos/${encodeURIComponent(token)}`).then((r) => r.data),
 }
 
 export const tagApi = {

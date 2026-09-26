@@ -54,6 +54,8 @@ export interface MemoSummary {
   title: string
   excerpt: string
   pinned: boolean
+  shareEnabled: boolean
+  shareToken?: string | null
   tags: Tag[]
   fileCount: number
   coverUrl?: string | null
@@ -66,10 +68,26 @@ export interface MemoDetail {
   title: string
   contentMd: string
   pinned: boolean
+  shareEnabled: boolean
+  shareToken?: string | null
   tags: Tag[]
   files: FileAsset[]
   createdAt: string
   updatedAt: string
+}
+
+export interface PublicMemoDetail {
+  id: number
+  title: string
+  contentMd: string
+  ownerId: number
+  ownerName: string
+  updatedAt: string
+}
+
+export interface ShareResponse {
+  enabled: boolean
+  token?: string | null
 }
 
 export interface PageResult<T> {

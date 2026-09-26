@@ -16,7 +16,6 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseCookie;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.util.StringUtils;
 
 import java.time.Duration;
 
@@ -83,30 +82,13 @@ public class AuthService {
         return finishLogin(user, response, "密码");
     }
 
-    /**
-     * 设置 / 修改密码。
-     * 已设过密码：当前密码 或 邮箱验证码，二选一；
-     * 还没设过：必须用邮箱验证码验证身份（防止登录态被盗后直接把账号锁走）。
-     */
+    /** 已登录用户直接设置 / 修改密码，不再重复要求邮箱验证码。 */
     @Transactional
     public UserDtos.UserDto changePassword(long userId, UserDtos.UpdatePasswordRequest request) {
         AppUser user = userService.requireEnabled(userId);
         boolean hasPassword = user.getPasswordHash() != null && !user.getPasswordHash().isBlank();
 
-        // 先校验新密码本身，避免弱密码白白消耗掉一次验证码
         passwordService.validateStrength(request.newPassword(), user.getEmail());
-
-        boolean verified = false;
-        if (hasPassword && StringUtils.hasText(request.currentPassword())) {
-            verified = passwordService.matches(request.currentPassword(), user.getPasswordHash());
-        }
-        if (!verified && StringUtils.hasText(request.code())) {
-            emailCodeService.verifyAndConsume(user.getEmail(), request.code());
-            verified = true;
-        }
-        if (!verified) {
-            throw ApiException.badRequest(hasPassword ? "请填写当前密码或邮箱验证码" : "请先获取邮箱验证码");
-        }
 
         userService.updatePasswordHash(userId, passwordService.encode(request.newPassword()));
         mailService.sendPasswordChanged(user.getEmail(), hasPassword);

@@ -144,6 +144,15 @@ public class FileService {
         return asset;
     }
 
+    /** 公开分享中的附件：必须确实属于当前仍启用的那条分享记录。 */
+    public FileAsset requirePublicReadable(long memoId, long fileId) {
+        FileAsset asset = fileMapper.selectById(fileId);
+        if (asset == null || !Long.valueOf(memoId).equals(asset.getMemoId())) {
+            throw ApiException.forbidden("该附件不属于当前分享");
+        }
+        return asset;
+    }
+
     /** 后台用：不看归属，也不管是否被屏蔽 */
     public FileAsset getAny(long fileId) {
         FileAsset asset = fileMapper.selectById(fileId);

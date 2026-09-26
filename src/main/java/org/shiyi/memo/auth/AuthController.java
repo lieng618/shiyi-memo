@@ -49,7 +49,7 @@ public class AuthController {
                 WebUtils.clientIp(servletRequest), response);
     }
 
-    /** 设置 / 修改登录密码：当前密码 或 邮箱验证码，二选一 */
+    /** 设置 / 修改登录密码：登录态直接修改 */
     @PutMapping("/password")
     public UserDtos.UserDto changePassword(@Valid @RequestBody UserDtos.UpdatePasswordRequest request) {
         return authService.changePassword(AuthContext.requireUserId(), request);

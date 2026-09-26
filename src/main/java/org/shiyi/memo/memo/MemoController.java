@@ -58,6 +58,12 @@ public class MemoController {
         memoService.pin(AuthContext.requireUserId(), id, request.pinned());
     }
 
+    @PostMapping("/{id}/share")
+    public MemoDtos.ShareResponse share(@PathVariable long id,
+                                        @RequestBody MemoDtos.ShareRequest request) {
+        return memoService.share(AuthContext.requireUserId(), id, request.enabled());
+    }
+
     @DeleteMapping("/{id}")
     public void delete(@PathVariable long id) {
         memoService.delete(AuthContext.requireUserId(), id);

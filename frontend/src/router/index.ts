@@ -24,6 +24,12 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/views/NoteDetailView.vue'),
   },
   {
+    path: '/share/:token',
+    name: 'public-share',
+    component: () => import('@/views/PublicShareView.vue'),
+    meta: { public: true, title: '查看分享' },
+  },
+  {
     path: '/me',
     name: 'profile',
     component: () => import('@/views/ProfileView.vue'),
@@ -44,7 +50,7 @@ const router = createRouter({
 
 router.beforeEach(async (to) => {
   const auth = useAuthStore()
-  if (!auth.initialized) {
+  if (!auth.initialized && !to.meta.public) {
     await auth.fetchMe()
   }
   if (to.meta.public) {
