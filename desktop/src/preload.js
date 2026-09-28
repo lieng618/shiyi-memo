@@ -10,4 +10,6 @@ contextBridge.exposeInMainWorld('shiyi', {
   openExternal: (url) => ipcRenderer.send('app:open-external', url),
   /** 退出应用 */
   quit: () => ipcRenderer.send('app:quit'),
+  /** 站点切换深浅色时同步过来，让窗口标题栏跟着一起变 */
+  setTheme: (dark) => ipcRenderer.send('app:set-theme', Boolean(dark)),
 })

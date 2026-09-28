@@ -1,6 +1,8 @@
 'use strict'
 
-const { app, BrowserWindow, Menu, Tray, shell, ipcMain, nativeImage, screen } = require('electron')
+const {
+  app, BrowserWindow, Menu, Tray, shell, ipcMain, nativeImage, nativeTheme, screen,
+} = require('electron')
 const fs = require('node:fs')
 const path = require('node:path')
 
@@ -104,6 +106,8 @@ function showMainWindow() {
 
 function showConnectionError(errorCode, errorDescription) {
   if (!mainWindow || mainWindow.isDestroyed()) return
+  // 错误页本身是深色的，标题栏也跟着深色，免得顶上留一条白边
+  nativeTheme.themeSource = 'dark'
   const page = path.join(__dirname, 'error.html')
   mainWindow.loadFile(page, {
     query: {
@@ -323,6 +327,12 @@ ipcMain.on('app:quit', () => {
 
 ipcMain.on('app:open-external', (_event, url) => {
   openExternal(String(url || ''))
+})
+
+// 站点切换深浅色时跟着换标题栏。Windows 原生标题栏只认 nativeTheme，
+// 默认跟系统主题，不跟站点的设置，所以必须显式同步一次。
+ipcMain.on('app:set-theme', (_event, dark) => {
+  nativeTheme.themeSource = dark ? 'dark' : 'light'
 })
 
 // 单实例：重复点图标就把已有窗口唤到前面，而不是开出第二个

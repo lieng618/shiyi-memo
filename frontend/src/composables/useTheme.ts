@@ -11,6 +11,8 @@ export function useTheme() {
     isDark.value = value
     document.documentElement.classList.toggle('dark', value)
     localStorage.setItem('theme', value ? 'dark' : 'light')
+    // 桌面端外壳：窗口标题栏跟着一起切换
+    window.shiyi?.setTheme?.(value)
   }
 
   function toggle() {
