@@ -42,6 +42,8 @@ public interface TagMapper extends BaseMapper<Tag> {
             LEFT JOIN memo_tag mt ON mt.tag_id = t.id
             WHERE t.user_id = #{userId}
             GROUP BY t.id, t.name, t.color
+            -- 只列出真正被笔记引用的标签，没有笔记使用的标签不展示
+            HAVING cnt > 0
             ORDER BY cnt DESC, t.id ASC
             """)
     List<Map<String, Object>> listWithCount(@Param("userId") long userId);
