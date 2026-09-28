@@ -28,6 +28,8 @@ target/
 build/
 !**/src/main/**/build/
 !**/src/test/**/build/
+# 桌面端 electron-builder 的 buildResources 也叫 build，别被上面的规则误伤
+!desktop/build/
 
 ### VS Code ###
 .vscode/

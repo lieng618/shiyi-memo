@@ -1,0 +1,56 @@
+{
+  "name": "shiyi-memo-desktop",
+  "version": "1.0.0",
+  "private": true,
+  "description": "拾忆桌面端（Windows）",
+  "author": "shiyi",
+  "license": "UNLICENSED",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win",
+    "dist:dir": "electron-builder --win --dir"
+  },
+  "devDependencies": {
+    "electron": "^44.4.5",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "org.shiyi.memo.desktop",
+    "productName": "拾忆",
+    "copyright": "Copyright © 2026 shiyi",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "src/**/*",
+      "package.json"
+    ],
+    "win": {
+      "icon": "build/icon.png",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        },
+        {
+          "target": "portable",
+          "arch": ["x64"]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "拾忆",
+      "artifactName": "shiyi-memo-setup-${version}.${ext}"
+    },
+    "portable": {
+      "artifactName": "shiyi-memo-${version}-portable.${ext}"
+    }
+  }
+}

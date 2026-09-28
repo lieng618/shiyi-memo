@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'" />
+  <title>拾忆 · 无法连接</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --amber: #d97706;
+      --amber-soft: #f0a52e;
+      --text: #f2ece4;
+      --muted: #9b9086;
+      --surface: #1b1714;
+      --border: #302822;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      height: 100%;
+      margin: 0;
+    }
+    body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: radial-gradient(circle at 50% 18%, #241b12 0%, #0f0d0b 62%);
+      color: var(--text);
+      font-family: "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+    .card {
+      width: min(460px, calc(100% - 48px));
+      padding: 40px 36px 32px;
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      background: rgba(27, 23, 20, 0.86);
+      backdrop-filter: blur(6px);
+      text-align: center;
+    }
+    .logo {
+      width: 76px;
+      height: 76px;
+      border-radius: 18px;
+      box-shadow: 0 12px 30px rgba(217, 119, 6, 0.22);
+    }
+    h1 {
+      margin: 22px 0 8px;
+      font-size: 20px;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+    }
+    p.lead {
+      margin: 0;
+      font-size: 14px;
+      line-height: 1.7;
+      color: var(--muted);
+    }
+    .detail {
+      margin: 22px 0 0;
+      padding: 14px 16px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: rgba(0, 0, 0, 0.28);
+      text-align: left;
+      font-size: 12.5px;
+      line-height: 1.8;
+      color: var(--muted);
+      -webkit-user-select: text;
+      user-select: text;
+    }
+    .detail code {
+      color: var(--amber-soft);
+      font-family: Consolas, "Cascadia Mono", monospace;
+      word-break: break-all;
+    }
+    .actions {
+      display: flex;
+      gap: 10px;
+      margin-top: 26px;
+    }
+    button {
+      flex: 1;
+      padding: 11px 16px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--text);
+      font-size: 14px;
+      font-family: inherit;
+      cursor: pointer;
+      transition: background-color 0.15s ease, border-color 0.15s ease;
+    }
+    button:hover { background: rgba(255, 255, 255, 0.06); }
+    button.primary {
+      border-color: transparent;
+      background: var(--amber);
+      color: #1b1206;
+      font-weight: 600;
+    }
+    button.primary:hover { background: var(--amber-soft); }
+    .hint {
+      margin: 18px 0 0;
+      font-size: 12px;
+      color: #6f665e;
+    }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <img class="logo" src="./assets/icon.png" alt="拾忆" />
+    <h1>连不上服务器</h1>
+    <p class="lead">拾忆需要连接服务器才能使用，请检查网络后重试。</p>
+
+    <div class="detail">
+      地址：<code id="target"></code><br />
+      原因：<code id="reason"></code>
+    </div>
+
+    <div class="actions">
+      <button class="primary" id="retry">重试</button>
+      <button id="browser">用浏览器打开</button>
+      <button id="quit">退出</button>
+    </div>
+
+    <p class="hint">服务器地址可以在托盘菜单的「打开配置文件」里修改</p>
+  </main>
+
+  <script>
+    const params = new URLSearchParams(location.search)
+    const url = params.get('url') || ''
+    const code = params.get('code') || ''
+    const desc = params.get('desc') || ''
+
+    document.getElementById('target').textContent = url
+    document.getElementById('reason').textContent = desc + (code ? ' (' + code + ')' : '')
+
+    document.getElementById('retry').addEventListener('click', () => window.shiyi.retry())
+    document.getElementById('browser').addEventListener('click', () => window.shiyi.openExternal(url))
+    document.getElementById('quit').addEventListener('click', () => window.shiyi.quit())
+  </script>
+</body>
+</html>
