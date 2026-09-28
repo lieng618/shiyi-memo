@@ -281,7 +281,7 @@ async function toggleShare(value: string | number | boolean) {
             class="stagger-item"
             :style="{ animationDelay: `${Math.min(index, 10) * 30}ms` }"
           >
-            <article class="note-row" :class="{ pinned: note.pinned }">
+            <article class="note-row">
               <button type="button" class="note-main" @click="openNote(note.id)">
                 <img
                   v-if="note.coverUrl"
@@ -376,7 +376,7 @@ async function toggleShare(value: string | number | boolean) {
               :model-value="shareEnabled"
               :loading="shareLoading"
               active-color="var(--success)"
-              inactive-color="var(--danger-fill)"
+              inactive-color="var(--border-strong)"
               aria-label="分享开启"
               @change="toggleShare"
             />
@@ -534,10 +534,6 @@ async function toggleShare(value: string | number | boolean) {
 .note-row:hover {
   border-color: var(--border-strong);
   box-shadow: var(--shadow-sm);
-}
-
-.note-row.pinned {
-  border-left: 3px solid var(--brand-fill);
 }
 
 .note-main {
@@ -724,8 +720,9 @@ async function toggleShare(value: string | number | boolean) {
 }
 
 .share-link-heading :deep(.el-switch__core) {
-  border-color: var(--danger-fill);
-  background: var(--danger-fill);
+  /* 没开启就是普通的灰色开关，红色留给删除这类破坏性操作 */
+  border-color: var(--border-strong);
+  background: var(--border-strong);
 }
 
 .share-link-heading :deep(.el-switch.is-checked .el-switch__core) {
