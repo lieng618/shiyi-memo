@@ -369,10 +369,13 @@ function skipPasswordSetup() {
   padding: var(--space-6) var(--space-4);
   background: var(--bg);
   background-image: radial-gradient(900px 520px at 12% -10%, rgba(217, 119, 6, 0.09), transparent 62%);
+  /* 桌面端无边框窗口：这一页没有顶栏，整块背景兼作窗口拖动区 */
+  -webkit-app-region: drag;
 }
 
 .login-shell {
   display: grid;
+  -webkit-app-region: no-drag;
   grid-template-columns: minmax(0, 0.85fr) minmax(0, 1fr);
   width: min(920px, 100%);
   /* 高度交给内容决定，标题去掉后卡片保持紧凑 */

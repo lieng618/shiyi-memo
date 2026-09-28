@@ -29,8 +29,15 @@ const router = useRouter()
   gap: var(--space-3);
   min-height: 60px;
   padding: var(--space-2) var(--space-4);
-  background: var(--panel);
-  border-bottom: 1px solid var(--border);
+  /* 和 AppShell 的顶栏保持一致：与页面同色，不留分隔线 */
+  background: var(--bg);
+  /* 桌面端无边框窗口：右侧给系统按钮让位，顶栏兼作拖动区 */
+  padding-right: calc(var(--space-4) + var(--titlebar-inset));
+  -webkit-app-region: drag;
+}
+
+.page-header :is(button, a, input) {
+  -webkit-app-region: no-drag;
 }
 
 .page-header h1 {

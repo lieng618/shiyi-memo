@@ -214,6 +214,13 @@ function onTagsChanged() {
   gap: var(--space-2);
   padding: var(--space-3) var(--space-4);
   border-bottom: 1px solid var(--border);
+  /* 桌面端无边框窗口：右侧给系统按钮让位，顶栏兼作拖动区 */
+  padding-right: calc(var(--space-4) + var(--titlebar-inset));
+  -webkit-app-region: drag;
+}
+
+.note-header :is(button, input) {
+  -webkit-app-region: no-drag;
 }
 
 .icon-btn {

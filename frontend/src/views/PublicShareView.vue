@@ -114,6 +114,13 @@ function goApp() {
   border-bottom: 1px solid var(--border);
   background: color-mix(in srgb, var(--panel) 94%, transparent);
   backdrop-filter: blur(12px);
+  /* 桌面端无边框窗口：右侧给系统按钮让位，顶栏兼作拖动区 */
+  padding-right: calc(clamp(16px, 4vw, 40px) + var(--titlebar-inset));
+  -webkit-app-region: drag;
+}
+
+.share-header :is(button, a) {
+  -webkit-app-region: no-drag;
 }
 
 .brand,

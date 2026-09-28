@@ -90,8 +90,17 @@ async function onNew() {
   justify-content: space-between;
   gap: var(--space-4);
   padding: var(--space-3) var(--space-6);
-  background: var(--panel);
-  border-bottom: 1px solid var(--border);
+  /* 跟页面同色，顶栏和正文连成一片，不再多出一条浅一档的带；
+     正文在自己的滚动容器里，不会滑到顶栏下面，所以不需要分隔线 */
+  background: var(--bg);
+  /* 桌面端无边框窗口：右侧给系统按钮让位，整条顶栏兼作窗口拖动区 */
+  padding-right: calc(var(--space-6) + var(--titlebar-inset));
+  -webkit-app-region: drag;
+}
+
+/* 拖动区里的控件要单独标回来，否则点不动 */
+.shell-header button {
+  -webkit-app-region: no-drag;
 }
 
 .brand {
@@ -221,6 +230,7 @@ async function onNew() {
 @media (max-width: 768px) {
   .shell-header {
     padding: var(--space-3) var(--space-4);
+    padding-right: calc(var(--space-4) + var(--titlebar-inset));
   }
 
   /* 窄屏保留「新建笔记」的文字，只收起 logo 字和昵称 */

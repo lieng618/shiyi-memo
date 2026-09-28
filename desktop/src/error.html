@@ -29,6 +29,8 @@
       font-family: "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
       -webkit-user-select: none;
       user-select: none;
+      /* 无边框窗口：这一页除了卡片以外都能拖动窗口 */
+      -webkit-app-region: drag;
     }
     .card {
       width: min(460px, calc(100% - 48px));
@@ -38,6 +40,7 @@
       background: rgba(27, 23, 20, 0.86);
       backdrop-filter: blur(6px);
       text-align: center;
+      -webkit-app-region: no-drag;
     }
     .logo {
       width: 76px;

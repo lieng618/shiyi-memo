@@ -15,6 +15,16 @@ const ASSETS_DIR = path.join(__dirname, 'assets')
 const WINDOW_STATE_FILE = path.join(app.getPath('userData'), 'window-state.json')
 const DEFAULT_BOUNDS = { width: 1180, height: 800 }
 const APP_TITLE = '拾忆'
+/** 无边框窗口的标题栏高度，跟系统按钮一样高 */
+const TITLE_BAR_HEIGHT = 34
+/**
+ * 标题栏配色，两边都用站点里的 --bg。
+ * 这样窗口最上面和页面正文是一个色，不再有一条独立的系统栏。
+ */
+const TITLE_BAR_THEME = {
+  dark: { color: '#171614', symbolColor: '#f1ede6' },
+  light: { color: '#faf9f5', symbolColor: '#1c1917' },
+}
 
 const config = loadConfig()
 
@@ -23,6 +33,21 @@ let tray = null
 let isQuitting = false
 let trayHintShown = false
 let saveTimer = null
+
+function titleBarOptions(dark) {
+  return { ...(dark ? TITLE_BAR_THEME.dark : TITLE_BAR_THEME.light), height: TITLE_BAR_HEIGHT }
+}
+
+/**
+ * 无边框窗口下，最小化 / 最大化 / 关闭由 Window Controls Overlay 提供，
+ * 它的底色和符号色要我们自己跟进站点深浅色，否则会在深色页面上留一块浅色。
+ */
+function applyTitleBarTheme(dark) {
+  nativeTheme.themeSource = dark ? 'dark' : 'light'
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.setTitleBarOverlay(titleBarOptions(dark))
+  }
+}
 
 /* ---------------------------------------------------------------- 窗口位置记忆 */
 
@@ -107,7 +132,7 @@ function showMainWindow() {
 function showConnectionError(errorCode, errorDescription) {
   if (!mainWindow || mainWindow.isDestroyed()) return
   // 错误页本身是深色的，标题栏也跟着深色，免得顶上留一条白边
-  nativeTheme.themeSource = 'dark'
+  applyTitleBarTheme(true)
   const page = path.join(__dirname, 'error.html')
   mainWindow.loadFile(page, {
     query: {
@@ -138,8 +163,11 @@ function createWindow() {
     minHeight: 600,
     title: APP_TITLE,
     icon: path.join(ASSETS_DIR, 'icon.png'),
-    backgroundColor: '#0f0d0b',
+    backgroundColor: '#171614',
     autoHideMenuBar: true,
+    // 不要系统那条标题栏：颜色由站点决定，系统只保留右上角那三个按钮
+    titleBarStyle: 'hidden',
+    titleBarOverlay: titleBarOptions(nativeTheme.shouldUseDarkColors),
     show: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -329,10 +357,9 @@ ipcMain.on('app:open-external', (_event, url) => {
   openExternal(String(url || ''))
 })
 
-// 站点切换深浅色时跟着换标题栏。Windows 原生标题栏只认 nativeTheme，
-// 默认跟系统主题，不跟站点的设置，所以必须显式同步一次。
+// 站点切换深浅色时跟着换标题栏。
 ipcMain.on('app:set-theme', (_event, dark) => {
-  nativeTheme.themeSource = dark ? 'dark' : 'light'
+  applyTitleBarTheme(Boolean(dark))
 })
 
 // 单实例：重复点图标就把已有窗口唤到前面，而不是开出第二个
