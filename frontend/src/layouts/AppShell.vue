@@ -42,35 +42,27 @@ async function onNew() {
         <span class="brand-name">拾忆</span>
       </div>
 
-      <!-- 右上角账号区：头像 + 昵称，头像正下方是新建图标 -->
-      <div class="account">
+      <!-- 右侧单行：主操作 + 站内信 + 账号，不再上下堆叠 -->
+      <div class="header-actions">
+        <button type="button" class="new-note-btn" :disabled="creating" @click="onNew">
+          <el-icon :size="16"><Edit /></el-icon>
+          <span>新建笔记</span>
+        </button>
+        <button
+          type="button"
+          class="icon-round"
+          title="站内信"
+          :aria-label="unread > 0 ? `站内信，${unread} 条未读` : '站内信'"
+          @click="router.push('/messages')"
+        >
+          <el-badge :value="unread" :hidden="unread === 0" :max="99" class="msg-badge">
+            <el-icon :size="18"><Bell /></el-icon>
+          </el-badge>
+        </button>
         <button type="button" class="account-btn" title="个人中心" @click="router.push('/me')">
-          <UserAvatar :user="auth.user" :size="38" />
+          <UserAvatar :user="auth.user" :size="34" />
           <span class="account-name">{{ auth.user?.nickname }}</span>
         </button>
-        <div class="account-actions">
-          <button
-            type="button"
-            class="icon-round"
-            title="新建笔记"
-            aria-label="新建笔记"
-            :disabled="creating"
-            @click="onNew"
-          >
-            <el-icon :size="18"><Edit /></el-icon>
-          </button>
-          <button
-            type="button"
-            class="icon-round"
-            title="站内信"
-            :aria-label="unread > 0 ? `站内信，${unread} 条未读` : '站内信'"
-            @click="router.push('/messages')"
-          >
-            <el-badge :value="unread" :hidden="unread === 0" :max="99" class="msg-badge">
-              <el-icon :size="18"><Bell /></el-icon>
-            </el-badge>
-          </button>
-        </div>
       </div>
     </header>
 
@@ -90,11 +82,14 @@ async function onNew() {
 }
 
 .shell-header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: var(--space-4);
-  padding: var(--space-4) var(--space-6);
+  padding: var(--space-3) var(--space-6);
   background: var(--panel);
   border-bottom: 1px solid var(--border);
 }
@@ -116,11 +111,41 @@ async function onNew() {
   object-fit: cover;
 }
 
-.account {
+.header-actions {
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
+  align-items: center;
   gap: var(--space-2);
+}
+
+/* 主操作给文字标签，比一个圆形图标更容易被发现 */
+.new-note-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0 var(--space-4);
+  border: none;
+  border-radius: 999px;
+  background: var(--brand-fill);
+  color: var(--on-brand-fill);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--dur) var(--ease-out), transform var(--dur-fast) var(--ease-out);
+}
+
+.new-note-btn:hover:not(:disabled) {
+  background: var(--brand-fill-hover);
+}
+
+.new-note-btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.new-note-btn:disabled {
+  opacity: 0.55;
+  cursor: progress;
 }
 
 .account-btn {
@@ -128,19 +153,20 @@ async function onNew() {
   align-items: center;
   gap: var(--space-2);
   min-height: 40px;
-  padding: 0 var(--space-2) 0 0;
-  border: none;
+  padding: 0 var(--space-3) 0 var(--space-1);
+  border: 1px solid transparent;
   border-radius: 999px;
   background: transparent;
   color: var(--text);
   font-family: inherit;
   font-size: 14px;
   cursor: pointer;
-  transition: background var(--dur) var(--ease-out);
+  transition: background var(--dur) var(--ease-out), border-color var(--dur) var(--ease-out);
 }
 
 .account-btn:hover {
-  background: var(--panel-hover);
+  border-color: var(--border);
+  background: var(--panel-2);
 }
 
 .account-name {
@@ -149,12 +175,6 @@ async function onNew() {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-weight: 600;
-}
-
-.account-actions {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
 }
 
 .icon-round {
@@ -203,21 +223,8 @@ async function onNew() {
     padding: var(--space-3) var(--space-4);
   }
 
-  .brand-name {
-    display: none;
-  }
-
-  .account {
-    flex-direction: row;
-    align-items: center;
-    justify-self: end;
-    gap: var(--space-3);
-  }
-
-  .account-actions {
-    gap: var(--space-2);
-  }
-
+  /* 窄屏保留「新建笔记」的文字，只收起 logo 字和昵称 */
+  .brand-name,
   .account-name {
     display: none;
   }

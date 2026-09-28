@@ -183,13 +183,13 @@ async function logout() {
         <section class="card">
           <h2>昵称</h2>
           <div class="field">
-            <label for="profile-nickname">显示名称</label>
             <div class="row">
               <input
                 id="profile-nickname"
                 v-model="nickname"
                 type="text"
                 maxlength="64"
+                aria-label="昵称"
                 :aria-invalid="Boolean(nicknameError)"
                 :aria-describedby="nicknameError ? 'profile-nickname-error' : undefined"
               />
@@ -229,12 +229,11 @@ async function logout() {
         </section>
 
         <section class="card">
-          <h2>外观</h2>
+          <h2 id="appearance-title">外观</h2>
           <div class="field">
-            <span id="theme-label" class="label-text">主题</span>
             <el-radio-group
               :model-value="isDark"
-              aria-labelledby="theme-label"
+              aria-labelledby="appearance-title"
               @change="(value: string | number | boolean | undefined) => setDark(Boolean(value))"
             >
               <el-radio-button :value="false">浅色</el-radio-button>
@@ -396,8 +395,7 @@ async function logout() {
   gap: var(--space-2);
 }
 
-.field label,
-.label-text {
+.field label {
   font-size: 13.5px;
   font-weight: 600;
   color: var(--text-2);

@@ -297,7 +297,9 @@ a:hover {
 }
 
 .stagger-item {
-  animation: rise-in var(--dur-slow) var(--ease-out) both;
+  /* backwards：延迟期间保持起始态，动画结束后交还给普通样式，
+     这样列表项后续的退出 / 位移过渡不会被动画的填充状态盖住 */
+  animation: rise-in var(--dur-slow) var(--ease-out) backwards;
 }
 
 @media (prefers-reduced-motion: reduce) {

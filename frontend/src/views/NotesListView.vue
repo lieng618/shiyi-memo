@@ -22,6 +22,8 @@ import { useNotesFilter } from '@/composables/useNotesFilter'
 import { useCreateNote } from '@/composables/useCreateNote'
 
 const PAGE_SIZE = 20
+/** 后端单次最多返回 100 条，静默刷新按这个上限取回已加载的范围 */
+const MAX_PAGE_SIZE = 100
 
 const router = useRouter()
 const createNote = useCreateNote()
@@ -29,7 +31,6 @@ const { keywordInput, keyword, activeTagIds, toggleTag, clear, hasFilter } = use
 
 const notes = ref<MemoSummary[]>([])
 const total = ref(0)
-const page = ref(1)
 const loading = ref(false)
 const loadingMore = ref(false)
 const tags = ref<Tag[]>([])
@@ -44,11 +45,11 @@ const hasAnyNotes = ref(false)
 const filtered = computed(() => hasFilter())
 const hasMore = computed(() => notes.value.length < total.value)
 
-watch([keyword, activeTagIds], () => void load(true), { deep: true })
+watch([keyword, activeTagIds], () => void load(), { deep: true })
 
 onMounted(() => {
   void loadTags()
-  void load(true)
+  void load()
 })
 
 async function loadTags() {
@@ -59,36 +60,81 @@ async function loadTags() {
   }
 }
 
-async function load(reset = false) {
-  if (reset) {
-    page.value = 1
-    loading.value = true
-  } else {
-    loadingMore.value = true
-  }
+function fetchNotes(page: number, size: number) {
+  return memoApi.list({
+    keyword: keyword.value.trim() || undefined,
+    tagIds: activeTagIds.value.length ? activeTagIds.value : undefined,
+    page,
+    size,
+  })
+}
+
+/** 首次进入或切换筛选条件：只有这里才显示骨架屏 */
+async function load() {
+  loading.value = true
   try {
-    const result = await memoApi.list({
-      keyword: keyword.value.trim() || undefined,
-      tagIds: activeTagIds.value.length ? activeTagIds.value : undefined,
-      page: page.value,
-      size: PAGE_SIZE,
-    })
-    notes.value = reset ? result.records : [...notes.value, ...result.records]
+    const result = await fetchNotes(1, PAGE_SIZE)
+    notes.value = result.records
     total.value = result.total
     if (!filtered.value) {
       hasAnyNotes.value = result.total > 0
     }
   } finally {
     loading.value = false
+  }
+}
+
+/**
+ * 静默刷新已经加载的范围。置顶 / 取消置顶 / 删除后用它来代替整页重载：
+ * 骨架屏不会闪、滚动位置不会跳，条目只会平滑地换位。
+ */
+async function refreshQuiet() {
+  const size = Math.min(MAX_PAGE_SIZE, Math.max(PAGE_SIZE, notes.value.length))
+  try {
+    const result = await fetchNotes(1, size)
+    notes.value = result.records
+    total.value = result.total
+    if (!filtered.value) {
+      hasAnyNotes.value = result.total > 0
+    }
+  } catch {
+    /* 刷新失败就保留原列表，错误提示由 http 拦截器负责 */
+  }
+}
+
+async function loadMore() {
+  if (loadingMore.value || !hasMore.value) return
+  loadingMore.value = true
+  try {
+    // 按「已加载条数」推算页码，中间删过条目时也不会跳过数据
+    const nextPage = Math.floor(notes.value.length / PAGE_SIZE) + 1
+    const result = await fetchNotes(nextPage, PAGE_SIZE)
+    const known = new Set(notes.value.map((item) => item.id))
+    const appended = result.records.filter((item) => !known.has(item.id))
+    if (appended.length) {
+      notes.value = [...notes.value, ...appended]
+      total.value = result.total
+    } else {
+      // 没有新增说明已经取到底了，把「加载更多」收起来
+      total.value = notes.value.length
+    }
+  } finally {
     loadingMore.value = false
   }
 }
 
 async function togglePin(note: MemoSummary) {
   const next = !note.pinned
-  await memoApi.pin(note.id, next)
+  // 先翻转状态，图标立刻响应；失败再回滚
+  note.pinned = next
+  try {
+    await memoApi.pin(note.id, next)
+  } catch {
+    note.pinned = !next
+    return
+  }
   ElMessage.success(next ? '已置顶' : '已取消置顶')
-  await load(true)
+  await refreshQuiet()
 }
 
 async function removeNote(note: MemoSummary) {
@@ -101,9 +147,26 @@ async function removeNote(note: MemoSummary) {
   } catch {
     return
   }
-  await memoApi.remove(note.id)
+  const snapshot = notes.value
+  const snapshotTotal = total.value
+  // 本地先移除，条目播放退场动画；失败再放回去
+  notes.value = notes.value.filter((item) => item.id !== note.id)
+  total.value = Math.max(0, total.value - 1)
+  if (!filtered.value) {
+    hasAnyNotes.value = total.value > 0
+  }
+  try {
+    await memoApi.remove(note.id)
+  } catch {
+    notes.value = snapshot
+    total.value = snapshotTotal
+    if (!filtered.value) {
+      hasAnyNotes.value = snapshotTotal > 0
+    }
+    return
+  }
   ElMessage.success('已删除')
-  await load(true)
+  await refreshQuiet()
 }
 
 async function openNote(id: number) {
@@ -156,9 +219,20 @@ async function toggleShare(value: string | number | boolean) {
 <template>
   <div class="notes-page">
     <div class="notes-inner">
-      <div v-if="hasAnyNotes" class="search-row">
+      <div v-if="hasAnyNotes" class="toolbar">
+        <div class="toolbar-title">
+          <h1>{{ filtered ? '筛选结果' : '全部笔记' }}</h1>
+          <p class="muted tnum">共 {{ total }} 条</p>
+        </div>
         <label class="visually-hidden" for="note-search">搜索笔记</label>
-        <el-input id="note-search" v-model="keywordInput" size="large" placeholder="搜索标题或正文…" clearable>
+        <el-input
+          id="note-search"
+          v-model="keywordInput"
+          class="toolbar-search"
+          size="large"
+          placeholder="搜索标题或正文…"
+          clearable
+        >
           <template #prefix>
             <el-icon><Search /></el-icon>
           </template>
@@ -200,11 +274,10 @@ async function toggleShare(value: string | number | boolean) {
       </div>
 
       <template v-else>
-        <ul class="note-list">
+        <transition-group tag="ul" name="note" class="note-list">
           <li
             v-for="(note, index) in notes"
             :key="note.id"
-            v-memo="[note.id, note.title, note.excerpt, note.pinned, note.shareEnabled, note.updatedAt]"
             class="stagger-item"
             :style="{ animationDelay: `${Math.min(index, 10) * 30}ms` }"
           >
@@ -273,10 +346,10 @@ async function toggleShare(value: string | number | boolean) {
               </button>
             </article>
           </li>
-        </ul>
+        </transition-group>
 
         <div class="load-more">
-          <el-button v-if="hasMore" :loading="loadingMore" @click="page += 1; load()">加载更多</el-button>
+          <el-button v-if="hasMore" :loading="loadingMore" @click="loadMore">加载更多</el-button>
           <span v-else class="muted">没有更多了</span>
         </div>
       </template>
@@ -341,8 +414,28 @@ async function toggleShare(value: string | number | boolean) {
   margin-bottom: var(--space-4);
 }
 
-.search-row {
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
   margin-bottom: var(--space-4);
+}
+
+.toolbar-title h1 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.toolbar-title p {
+  margin: 2px 0 0;
+  font-size: 12.5px;
+}
+
+.toolbar-search {
+  width: min(320px, 52%);
 }
 
 .tag-chip,
@@ -402,12 +495,30 @@ async function toggleShare(value: string | number | boolean) {
 }
 
 .note-list {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
   margin: 0;
   padding: 0;
   list-style: none;
+}
+
+/* 置顶 / 取消置顶 / 删除后，其余条目平滑让位，不再整页重排 */
+.note-move {
+  transition: transform var(--dur) var(--ease-out);
+}
+
+.note-leave-active {
+  position: absolute;
+  left: 0;
+  right: 0;
+  transition: opacity var(--dur-fast) var(--ease-in), transform var(--dur-fast) var(--ease-in);
+}
+
+.note-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
 }
 
 .note-row {
@@ -510,7 +621,30 @@ async function toggleShare(value: string | number | boolean) {
   background: transparent;
   color: var(--text-3);
   cursor: pointer;
-  transition: background var(--dur) var(--ease-out), color var(--dur) var(--ease-out);
+  opacity: 0;
+  transition: opacity var(--dur) var(--ease-out), background var(--dur) var(--ease-out),
+    color var(--dur) var(--ease-out);
+}
+
+/* 悬停 / 键盘聚焦到这一行时才露出操作按钮，平时把版面留给正文。
+   已置顶、已分享的条目保持常显，一眼能看出状态 */
+.note-row:hover .pin-btn,
+.note-row:hover .row-action,
+.note-row:focus-within .pin-btn,
+.note-row:focus-within .row-action,
+.pin-btn.on,
+.share-btn.on,
+.pin-btn:focus-visible,
+.row-action:focus-visible {
+  opacity: 1;
+}
+
+/* 触屏没有 hover，操作按钮常显，否则点不到 */
+@media (hover: none) {
+  .pin-btn,
+  .row-action {
+    opacity: 1;
+  }
 }
 
 .pin-btn:hover,
@@ -634,6 +768,16 @@ async function toggleShare(value: string | number | boolean) {
 @media (max-width: 560px) {
   .notes-inner {
     padding: var(--space-4) var(--space-3) var(--space-10);
+  }
+
+  .toolbar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-3);
+  }
+
+  .toolbar-search {
+    width: 100%;
   }
 
   .note-main {
