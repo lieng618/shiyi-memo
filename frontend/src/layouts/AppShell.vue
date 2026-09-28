@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { Bell, Plus } from '@element-plus/icons-vue'
+import { Bell, Edit } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { useCreateNote } from '@/composables/useCreateNote'
 import { useUnreadMessages } from '@/composables/useUnreadMessages'
@@ -57,7 +57,7 @@ async function onNew() {
             :disabled="creating"
             @click="onNew"
           >
-            <el-icon :size="18"><Plus /></el-icon>
+            <el-icon :size="18"><Edit /></el-icon>
           </button>
           <button
             type="button"

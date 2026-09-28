@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   CopyDocument,
+  Delete,
+  Edit,
   Link,
   Notebook,
   Paperclip,
@@ -86,6 +88,21 @@ async function togglePin(note: MemoSummary) {
   const next = !note.pinned
   await memoApi.pin(note.id, next)
   ElMessage.success(next ? '已置顶' : '已取消置顶')
+  await load(true)
+}
+
+async function removeNote(note: MemoSummary) {
+  try {
+    await ElMessageBox.confirm(
+      `「${note.title || '这条笔记'}」和它的附件都会被直接删除，无法恢复。`,
+      '确认删除',
+      { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning' },
+    )
+  } catch {
+    return
+  }
+  await memoApi.remove(note.id)
+  ElMessage.success('已删除')
   await load(true)
 }
 
@@ -178,7 +195,7 @@ async function toggleShare(value: string | number | boolean) {
         </template>
         <template v-else>
           <p>还没有笔记，写下第一条吧。</p>
-          <el-button type="primary" @click="createNote">新建笔记</el-button>
+          <el-button type="primary" :icon="Edit" @click="createNote">新建笔记</el-button>
         </template>
       </div>
 
@@ -243,6 +260,16 @@ async function toggleShare(value: string | number | boolean) {
                 @click.stop="togglePin(note)"
               >
                 <el-icon><StarFilled v-if="note.pinned" /><Star v-else /></el-icon>
+              </button>
+
+              <button
+                type="button"
+                class="row-action danger-btn"
+                :aria-label="`删除 ${note.title || '无标题'}`"
+                title="删除"
+                @click.stop="removeNote(note)"
+              >
+                <el-icon><Delete /></el-icon>
               </button>
             </article>
           </li>
@@ -505,6 +532,11 @@ async function toggleShare(value: string | number | boolean) {
   cursor: wait;
 }
 
+/* 列表里的删除按钮：悬停时才变红，平时保持中性的灰色 */
+.danger-btn:hover {
+  color: var(--danger-fill);
+}
+
 .share-dialog {
   display: flex;
   flex-direction: column;
@@ -612,6 +644,12 @@ async function toggleShare(value: string | number | boolean) {
   .note-cover {
     width: 72px;
     height: 72px;
+  }
+
+  /* 窄屏下多挤了一个删除按钮，操作区收窄一点给正文留位置 */
+  .pin-btn,
+  .row-action {
+    width: 40px;
   }
 }
 </style>

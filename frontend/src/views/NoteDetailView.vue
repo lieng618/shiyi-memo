@@ -1,8 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowLeft, Delete, Star, StarFilled } from '@element-plus/icons-vue'
+import { ArrowLeft } from '@element-plus/icons-vue'
 import { memoApi, tagApi } from '@/api'
 import type { MemoDetail, Tag } from '@/types'
 import { formatFull } from '@/utils/format'
@@ -148,32 +147,6 @@ function onTagsChanged() {
   void save()
 }
 
-async function togglePin() {
-  const target = detail.value
-  if (!target) return
-  const next = !target.pinned
-  await memoApi.pin(target.id, next)
-  detail.value = { ...target, pinned: next }
-  ElMessage.success(next ? '已置顶' : '已取消置顶')
-}
-
-async function remove() {
-  const target = detail.value
-  if (!target) return
-  try {
-    await ElMessageBox.confirm(
-      `「${target.title || '这条笔记'}」和它的附件都会被直接删除，无法恢复。`,
-      '确认删除',
-      { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning' },
-    )
-  } catch {
-    return
-  }
-  await memoApi.remove(target.id)
-  ElMessage.success('已删除')
-  await router.replace('/notes')
-}
-
 </script>
 
 <template>
@@ -195,22 +168,6 @@ async function remove() {
       />
 
       <span class="save-state muted" role="status" aria-live="polite">{{ saveLabel }}</span>
-
-      <button
-        type="button"
-        class="icon-btn"
-        :class="{ on: detail?.pinned }"
-        :aria-label="detail?.pinned ? '取消置顶' : '置顶这条笔记'"
-        :aria-pressed="Boolean(detail?.pinned)"
-        :title="detail?.pinned ? '取消置顶' : '置顶'"
-        @click="togglePin"
-      >
-        <el-icon :size="17"><StarFilled v-if="detail?.pinned" /><Star v-else /></el-icon>
-      </button>
-
-      <button type="button" class="icon-btn danger" title="删除笔记" aria-label="删除这条笔记" @click="remove">
-        <el-icon :size="17"><Delete /></el-icon>
-      </button>
     </header>
 
     <div class="tag-row">
@@ -276,14 +233,6 @@ async function remove() {
 .icon-btn:hover {
   background: var(--panel-hover);
   color: var(--text);
-}
-
-.icon-btn.on {
-  color: var(--brand-hover);
-}
-
-.icon-btn.danger:hover {
-  color: var(--danger-fill);
 }
 
 .title-input {
