@@ -1,17 +1,19 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { Bell, Edit } from '@element-plus/icons-vue'
+import { Bell, Edit, Link } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { useCreateNote } from '@/composables/useCreateNote'
 import { useUnreadMessages } from '@/composables/useUnreadMessages'
 import UserAvatar from '@/components/UserAvatar.vue'
+import OpenShareDialog from '@/components/OpenShareDialog.vue'
 
 const auth = useAuthStore()
 const router = useRouter()
 const createNote = useCreateNote()
 const { unread, refresh: refreshUnread } = useUnreadMessages()
 const creating = ref(false)
+const shareOpen = ref(false)
 
 let timer: ReturnType<typeof setInterval> | undefined
 
@@ -59,6 +61,15 @@ async function onNew() {
             <el-icon :size="18"><Bell /></el-icon>
           </el-badge>
         </button>
+        <button
+          type="button"
+          class="icon-round"
+          title="打开分享链接"
+          aria-label="打开分享链接"
+          @click="shareOpen = true"
+        >
+          <el-icon :size="18"><Link /></el-icon>
+        </button>
         <button type="button" class="account-btn" title="个人中心" @click="router.push('/me')">
           <UserAvatar :user="auth.user" :size="34" />
           <span class="account-name">{{ auth.user?.nickname }}</span>
@@ -69,6 +80,8 @@ async function onNew() {
     <main class="shell-content">
       <router-view />
     </main>
+
+    <OpenShareDialog v-model="shareOpen" />
   </div>
 </template>
 

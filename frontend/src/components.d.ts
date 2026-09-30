@@ -35,6 +35,7 @@ declare module 'vue' {
     FilePreview: typeof import('./components/FilePreview.vue')['default']
     MarkdownEditor: typeof import('./components/MarkdownEditor.vue')['default']
     MarkdownView: typeof import('./components/MarkdownView.vue')['default']
+    OpenShareDialog: typeof import('./components/OpenShareDialog.vue')['default']
     PageHeader: typeof import('./components/PageHeader.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
