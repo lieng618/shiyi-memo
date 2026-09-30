@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { Bell, Edit, Link } from '@element-plus/icons-vue'
+import { Bell, Edit, Link, User } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { useCreateNote } from '@/composables/useCreateNote'
 import { useUnreadMessages } from '@/composables/useUnreadMessages'
@@ -49,6 +49,15 @@ async function onNew() {
         <button type="button" class="new-note-btn" :disabled="creating" @click="onNew">
           <el-icon :size="16"><Edit /></el-icon>
           <span>新建笔记</span>
+        </button>
+        <button
+          type="button"
+          class="icon-round"
+          title="好友"
+          aria-label="好友"
+          @click="router.push('/friends')"
+        >
+          <el-icon :size="18"><User /></el-icon>
         </button>
         <button
           type="button"

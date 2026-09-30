@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { EditPen, Lock, Reading } from '@element-plus/icons-vue'
-import { shareApi } from '@/api'
+import { ElMessage } from 'element-plus'
+import { EditPen, Lock, Plus, Reading } from '@element-plus/icons-vue'
+import { friendApi, shareApi } from '@/api'
 import type { PublicMemoDetail } from '@/types'
 import { useAuthStore } from '@/stores/auth'
 import { formatFull } from '@/utils/format'
@@ -15,6 +16,7 @@ const auth = useAuthStore()
 const detail = ref<PublicMemoDetail | null>(null)
 const loading = ref(true)
 const errorMessage = ref('')
+const requested = ref(false)
 
 const token = computed(() => String(route.params.token ?? ''))
 const isOwner = computed(() => auth.user?.id === detail.value?.ownerId)
@@ -50,6 +52,17 @@ function goApp() {
     return
   }
   void router.push('/notes')
+}
+
+async function addFriend() {
+  if (!detail.value?.ownerId || requested.value) return
+  try {
+    await friendApi.sendRequest(detail.value.ownerId)
+    requested.value = true
+    ElMessage.success(`已向 ${detail.value.ownerName} 发送好友申请`)
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '发送失败')
+  }
 }
 </script>
 
@@ -87,6 +100,17 @@ function goApp() {
           <h1>{{ detail.title || '无标题' }}</h1>
           <p class="article-meta tnum">
             由 {{ detail.ownerName }} 分享 · 更新于 {{ formatFull(detail.updatedAt) }}
+            <!-- 登录且不是作者时可以在用户名这里发好友申请 -->
+            <button
+              v-if="auth.isLoggedIn && !isOwner"
+              type="button"
+              class="add-friend-btn"
+              :disabled="requested"
+              @click="addFriend"
+            >
+              <el-icon :size="13"><Plus /></el-icon>
+              <span>{{ requested ? '已申请' : '加好友' }}</span>
+            </button>
           </p>
         </header>
         <MarkdownView :content="detail.contentMd" :public-token="token" />
@@ -192,6 +216,36 @@ function goApp() {
   margin: var(--space-4) 0 0;
   color: var(--text-3);
   font-size: 13px;
+}
+
+/* 用户名旁边的加好友小按钮 */
+.add-friend-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: var(--space-2);
+  padding: 2px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-2);
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  vertical-align: middle;
+  cursor: pointer;
+  transition: background var(--dur) var(--ease-out), border-color var(--dur) var(--ease-out), color var(--dur) var(--ease-out);
+}
+
+.add-friend-btn:hover:not(:disabled) {
+  border-color: var(--brand-fill);
+  background: var(--brand-soft);
+  color: var(--brand-hover);
+}
+
+.add-friend-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
 }
 
 .share-state {

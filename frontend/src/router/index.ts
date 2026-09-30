@@ -39,6 +39,16 @@ const routes: RouteRecordRaw[] = [
     name: 'messages',
     component: () => import('@/views/MessagesView.vue'),
   },
+  {
+    path: '/friends',
+    name: 'friends',
+    component: () => import('@/views/FriendsView.vue'),
+  },
+  {
+    path: '/friends/:id(\\d+)',
+    name: 'friend-chat',
+    component: () => import('@/views/ChatView.vue'),
+  },
   { path: '/:pathMatch(.*)*', redirect: '/notes' },
 ]
 

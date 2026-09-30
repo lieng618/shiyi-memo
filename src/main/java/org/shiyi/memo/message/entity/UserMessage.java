@@ -17,10 +17,14 @@ public class UserMessage {
     private Long userId;
     private String title;
     private String content;
-    /** NOTICE / FILE_BLOCKED / MEMO_REMOVED */
+    /** NOTICE / FILE_BLOCKED / MEMO_REMOVED / FRIEND_REQUEST */
     private String type;
     private Long refMemoId;
     private Long refFileId;
+    /** FRIEND_REQUEST 时的申请人 */
+    private Long refUserId;
+    /** FRIEND_REQUEST 的处理状态：PENDING / ACCEPTED / REJECTED */
+    private String requestStatus;
     private LocalDateTime readAt;
     private String senderName;
     private LocalDateTime createdAt;

@@ -128,7 +128,10 @@ export interface LoginResponse {
   expiresInSeconds: number
 }
 
-export type MessageType = 'NOTICE' | 'FILE_BLOCKED' | 'MEMO_REMOVED'
+export type MessageType = 'NOTICE' | 'FILE_BLOCKED' | 'MEMO_REMOVED' | 'FRIEND_REQUEST'
+
+/** 好友申请的处理状态，只在 type = FRIEND_REQUEST 的站内信上有值 */
+export type FriendRequestStatus = 'PENDING' | 'ACCEPTED' | 'REJECTED'
 
 export interface UserMessage {
   id: number
@@ -137,7 +140,33 @@ export interface UserMessage {
   type: MessageType
   refMemoId?: number | null
   refFileId?: number | null
+  /** FRIEND_REQUEST 时的申请人用户 id */
+  refUserId?: number | null
+  requestStatus?: FriendRequestStatus | null
   senderName: string
   readAt?: string | null
   createdAt: string
 }
+
+export interface Friend {
+  userId: number
+  nickname: string
+  avatarUrl?: string | null
+  unread: number
+  friendedAt: string
+}
+
+export interface UserSearchResult {
+  userId: number
+  nickname: string
+  avatarUrl?: string | null
+}
+
+export interface ChatMessage {
+  id: number
+  senderId: number
+  mine: boolean
+  content: string
+  createdAt: string
+}
+

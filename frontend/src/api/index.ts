@@ -1,8 +1,10 @@
 import { http } from './http'
 import type {
   BackupImportResult,
+  ChatMessage,
   FileAsset,
   FileKind,
+  Friend,
   LoginResponse,
   MemoDetail,
   MemoSummary,
@@ -14,6 +16,7 @@ import type {
   Tag,
   User,
   UserMessage,
+  UserSearchResult,
 } from '@/types'
 
 export const authApi = {
@@ -135,4 +138,20 @@ export const messageApi = {
   unreadCount: () => http.get<{ count: number }>('/messages/unread-count').then((r) => r.data.count),
   markRead: (ids?: number[]) =>
     http.post<{ count: number }>('/messages/read', { ids: ids ?? null }).then((r) => r.data.count),
+}
+
+/** 好友：申请走站内信，同意后才能聊天 */
+export const friendApi = {
+  list: () => http.get<Friend[]>('/friends').then((r) => r.data),
+  remove: (userId: number) => http.delete(`/friends/${userId}`).then(() => undefined),
+  search: (keyword: string) =>
+    http.get<UserSearchResult[]>('/friends/search', { params: { keyword } }).then((r) => r.data),
+  sendRequest: (toUserId: number) =>
+    http.post('/friends/requests', { toUserId }).then(() => undefined),
+  accept: (messageId: number) => http.post(`/friends/requests/${messageId}/accept`).then(() => undefined),
+  reject: (messageId: number) => http.post(`/friends/requests/${messageId}/reject`).then(() => undefined),
+  chat: (userId: number, params: { afterId?: number; limit?: number } = {}) =>
+    http.get<ChatMessage[]>(`/friends/${userId}/chat`, { params }).then((r) => r.data),
+  sendChat: (userId: number, content: string) =>
+    http.post<ChatMessage>(`/friends/${userId}/chat`, { content }).then((r) => r.data),
 }

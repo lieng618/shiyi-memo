@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { Bell } from '@element-plus/icons-vue'
-import { messageApi } from '@/api'
+import { ElMessage } from 'element-plus'
+import { friendApi, messageApi } from '@/api'
 import type { UserMessage } from '@/types'
 import { formatFull } from '@/utils/format'
 import { useUnreadMessages } from '@/composables/useUnreadMessages'
@@ -20,6 +21,13 @@ const typeLabels: Record<string, string> = {
   NOTICE: '通知',
   FILE_BLOCKED: '文件屏蔽',
   MEMO_REMOVED: '笔记删除',
+  FRIEND_REQUEST: '好友申请',
+}
+
+const requestStatusLabels: Record<string, string> = {
+  PENDING: '待处理',
+  ACCEPTED: '已同意',
+  REJECTED: '已拒绝',
 }
 
 onMounted(async () => {
@@ -53,6 +61,21 @@ async function load(reset = false) {
 function loadMore() {
   page.value += 1
   void load(false)
+}
+
+async function handleRequest(message: UserMessage, accept: boolean) {
+  try {
+    if (accept) {
+      await friendApi.accept(message.id)
+      ElMessage.success('已同意好友申请')
+    } else {
+      await friendApi.reject(message.id)
+      ElMessage.info('已拒绝好友申请')
+    }
+    message.requestStatus = accept ? 'ACCEPTED' : 'REJECTED'
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '操作失败')
+  }
 }
 </script>
 
@@ -92,7 +115,20 @@ function loadMore() {
                 <span class="muted message-time tnum">{{ formatFull(message.createdAt) }}</span>
               </header>
               <p class="message-content">{{ message.content }}</p>
-              <footer class="message-foot muted">来自 {{ message.senderName }}</footer>
+              <!-- 好友申请：待处理时给同意/拒绝，处理过就显示结果 -->
+              <footer
+                v-if="message.type === 'FRIEND_REQUEST' && message.requestStatus"
+                class="message-foot request-foot"
+              >
+                <template v-if="message.requestStatus === 'PENDING'">
+                  <el-button type="primary" size="small" @click="handleRequest(message, true)">同意</el-button>
+                  <el-button size="small" @click="handleRequest(message, false)">拒绝</el-button>
+                </template>
+                <el-tag v-else size="small" :type="message.requestStatus === 'ACCEPTED' ? 'success' : 'info'" effect="plain">
+                  {{ requestStatusLabels[message.requestStatus] }}
+                </el-tag>
+              </footer>
+              <footer v-else class="message-foot muted">来自 {{ message.senderName }}</footer>
             </li>
           </ul>
 
@@ -184,6 +220,13 @@ function loadMore() {
 .message-foot {
   margin-top: var(--space-3);
   font-size: 12.5px;
+}
+
+/* 好友申请的操作按钮行 */
+.request-foot {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
 }
 
 .load-more {

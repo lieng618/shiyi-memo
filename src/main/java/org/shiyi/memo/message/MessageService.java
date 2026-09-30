@@ -21,6 +21,7 @@ public class MessageService {
     public static final String TYPE_NOTICE = "NOTICE";
     public static final String TYPE_FILE_BLOCKED = "FILE_BLOCKED";
     public static final String TYPE_MEMO_REMOVED = "MEMO_REMOVED";
+    public static final String TYPE_FRIEND_REQUEST = "FRIEND_REQUEST";
 
     private final UserMessageMapper messageMapper;
 
