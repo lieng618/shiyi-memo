@@ -1,7 +1,7 @@
 'use strict'
 
 const {
-  app, BrowserWindow, Menu, Tray, shell, ipcMain, nativeImage, nativeTheme, screen,
+  app, BrowserWindow, Menu, Tray, shell, ipcMain, nativeImage, nativeTheme, screen, dialog, session,
 } = require('electron')
 const fs = require('node:fs')
 const path = require('node:path')
@@ -115,6 +115,35 @@ function openExternal(url) {
   if (/^https?:\/\//i.test(url)) {
     shell.openExternal(url)
   }
+}
+
+/** 下载 / 导出文件名里不允许出现的字符 */
+function safeFilename(name, fallback) {
+  const clean = String(name || '').replace(/[\\/:*?"<>|]/g, '').trim()
+  return clean || fallback
+}
+
+function activeWindow() {
+  return mainWindow && !mainWindow.isDestroyed() ? mainWindow : null
+}
+
+/**
+ * 渲染层的下载（导出 md / html / png，以及附件下载）统一弹系统「另存为」，
+ * 不再默默存进下载文件夹，用户能自己选位置。
+ */
+function setupDownloads() {
+  session.defaultSession.on('will-download', (_event, item) => {
+    const options = {
+      defaultPath: path.join(app.getPath('downloads'), safeFilename(item.getFilename(), 'download')),
+    }
+    const parent = activeWindow()
+    const target = parent ? dialog.showSaveDialogSync(parent, options) : dialog.showSaveDialogSync(options)
+    if (!target) {
+      item.cancel()
+      return
+    }
+    item.setSavePath(target)
+  })
 }
 
 /* ------------------------------------------------------------------------ 窗口 */
@@ -328,6 +357,7 @@ function bootstrap() {
   buildMenu()
   createWindow()
   createTray()
+  setupDownloads()
 
   app.on('second-instance', showMainWindow)
 
@@ -360,6 +390,48 @@ ipcMain.on('app:open-external', (_event, url) => {
 // 站点切换深浅色时跟着换标题栏。
 ipcMain.on('app:set-theme', (_event, dark) => {
   applyTitleBarTheme(Boolean(dark))
+})
+
+/**
+ * 单条笔记导出 PDF：渲染层把自包含 HTML（图片已内联）传过来，
+ * 在一个隐藏窗口里加载后走 Chromium 打印引擎，再弹「另存为」。
+ */
+ipcMain.handle('app:export-pdf', async (_event, html, filename) => {
+  if (typeof html !== 'string' || html.length < 20) {
+    return { error: 'empty' }
+  }
+  const dir = await fs.promises.mkdtemp(path.join(app.getPath('temp'), 'shiyi-export-'))
+  const page = path.join(dir, 'note.html')
+  let pdfWindow = null
+  try {
+    await fs.promises.writeFile(page, html, 'utf8')
+    pdfWindow = new BrowserWindow({
+      show: false,
+      webPreferences: { sandbox: true, contextIsolation: true, spellcheck: false },
+    })
+    await pdfWindow.loadFile(page)
+    // 给字体和图片布局一点稳定时间，否则首页可能截到没渲染完的排版
+    await new Promise((resolve) => setTimeout(resolve, 400))
+    const pdf = await pdfWindow.webContents.printToPDF({
+      printBackground: true,
+      pageSize: 'A4',
+      margins: { top: 0.4, bottom: 0.5, left: 0.45, right: 0.45 },
+    })
+    const parent = activeWindow()
+    const options = {
+      defaultPath: path.join(app.getPath('downloads'), safeFilename(filename, '拾忆笔记.pdf')),
+      filters: [{ name: 'PDF 文档', extensions: ['pdf'] }],
+    }
+    const target = parent ? dialog.showSaveDialogSync(parent, options) : dialog.showSaveDialogSync(options)
+    if (!target) {
+      return { canceled: true }
+    }
+    await fs.promises.writeFile(target, Buffer.from(pdf))
+    return { path: target }
+  } finally {
+    if (pdfWindow && !pdfWindow.isDestroyed()) pdfWindow.destroy()
+    fs.promises.rm(dir, { recursive: true, force: true }).catch(() => {})
+  }
 })
 
 // 单实例：重复点图标就把已有窗口唤到前面，而不是开出第二个

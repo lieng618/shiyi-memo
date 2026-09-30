@@ -12,4 +12,7 @@ contextBridge.exposeInMainWorld('shiyi', {
   quit: () => ipcRenderer.send('app:quit'),
   /** 站点切换深浅色时同步过来，让窗口标题栏跟着一起变 */
   setTheme: (dark) => ipcRenderer.send('app:set-theme', Boolean(dark)),
+  /** 把自包含 HTML 交给主进程用 Chromium 打印引擎转成 PDF，弹系统「另存为」 */
+  exportPdf: (html, filename) =>
+    ipcRenderer.invoke('app:export-pdf', String(html ?? ''), String(filename ?? '')),
 })
