@@ -19,6 +19,7 @@ import org.shiyi.memo.user.entity.AppUser;
 import org.shiyi.memo.user.entity.UserLevel;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
 import javax.imageio.ImageIO;
@@ -76,7 +77,7 @@ public class FileService {
 
         String originalName = sanitizeName(multipart.getOriginalFilename());
         String ext = extensionOf(originalName);
-        String mime = detectMime(multipart, ext);
+        String mime = detectMime(multipart.getContentType(), ext);
         String kind = kindOf(mime, ext);
         String relativePath = buildRelativePath(userId, ext);
 
@@ -110,6 +111,63 @@ public class FileService {
         }
         log.info("文件上传成功 user={} fileId={} name={} size={}", userId, asset.getId(), originalName, size);
         return FileDtos.FileDto.from(asset);
+    }
+
+    /**
+     * 备份导入专用：文件内容来自备份压缩包而不是上传请求。
+     * 与 upload 走同一套配额 / 存储 / 计量逻辑，declaredSize 用于提前校验剩余空间。
+     */
+    @Transactional
+    public FileAsset importAsset(long userId, Long memoId, String originalName, String mimeHint,
+                                 long declaredSize, InputStream in) {
+        if (memoId != null) {
+            requireMemo(userId, memoId);
+        }
+        AppUser user = userService.requireEnabled(userId);
+        UserLevel level = userService.levelOf(user);
+        long used = user.getStorageUsed() == null ? 0 : user.getStorageUsed();
+        if (used + declaredSize > level.getMaxStorage()) {
+            throw new ApiException(413, "剩余空间不足：当前等级「" + level.getName() + "」共 "
+                    + humanSize(level.getMaxStorage()) + "，已使用 " + humanSize(used)
+                    + "，还需约 " + humanSize(declaredSize) + "，导入已中止");
+        }
+
+        String cleanName = sanitizeName(originalName);
+        String ext = extensionOf(cleanName);
+        String mime = StringUtils.hasText(mimeHint) ? mimeHint : detectMime(null, ext);
+        String kind = kindOf(mime, ext);
+        String relativePath = buildRelativePath(userId, ext);
+
+        CountingInputStream counting = new CountingInputStream(in);
+        String stored;
+        try {
+            stored = storage.store(counting, relativePath);
+        } catch (IOException ex) {
+            log.error("备份导入写文件失败 userId={} name={}", userId, cleanName, ex);
+            throw new ApiException(500, "附件写入失败，导入已中止");
+        }
+
+        FileAsset asset = new FileAsset();
+        asset.setUserId(userId);
+        asset.setMemoId(memoId);
+        asset.setOriginalName(cleanName);
+        asset.setExt(ext);
+        asset.setMime(mime);
+        asset.setSize(counting.count);
+        asset.setKind(kind);
+        asset.setStoragePath(stored);
+        try {
+            fileMapper.insert(asset);
+        } catch (RuntimeException ex) {
+            storage.delete(stored);
+            throw ex;
+        }
+        userService.addStorageUsed(userId, counting.count);
+
+        if ("image".equals(kind)) {
+            probeImageSize(asset);
+        }
+        return asset;
     }
 
     public PageResult<FileDtos.FileDto> list(long userId, Long memoId, String kind, long page, long size) {
@@ -322,8 +380,8 @@ public class FileService {
         return ext.length() > 16 ? ext.substring(0, 16) : ext;
     }
 
-    private static String detectMime(MultipartFile file, String ext) {
-        String mime = file.getContentType();
+    private static String detectMime(String contentType, String ext) {
+        String mime = contentType;
         if (mime != null && !mime.isBlank() && !"application/octet-stream".equals(mime)) {
             return mime;
         }
@@ -362,7 +420,7 @@ public class FileService {
         return "other";
     }
 
-    public static String humanSize(long bytes) {
+    private static String humanSize(long bytes) {
         if (bytes < 1024) {
             return bytes + " B";
         }
@@ -370,9 +428,36 @@ public class FileService {
         double value = bytes / 1024.0;
         int unit = 0;
         while (value >= 1024 && unit < units.length - 1) {
-            value /= 1024;
+            value /= 1024.0;
             unit++;
         }
         return (value >= 100 ? String.format("%.0f", value) : String.format("%.1f", value)) + " " + units[unit];
+    }
+
+    /** 备份导入时统计实际读到的字节数，清单里声明的 size 不一定可靠 */
+    private static final class CountingInputStream extends java.io.FilterInputStream {
+        private long count;
+
+        CountingInputStream(InputStream in) {
+            super(in);
+        }
+
+        @Override
+        public int read() throws IOException {
+            int b = super.read();
+            if (b >= 0) {
+                count++;
+            }
+            return b;
+        }
+
+        @Override
+        public int read(byte[] buffer, int offset, int length) throws IOException {
+            int n = super.read(buffer, offset, length);
+            if (n > 0) {
+                count += n;
+            }
+            return n;
+        }
     }
 }

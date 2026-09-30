@@ -274,7 +274,7 @@ public class MemoService {
     /**
      * 标题留空时，取正文第一行非空内容当标题。
      */
-    static String resolveTitle(String title, String contentMd) {
+    public static String resolveTitle(String title, String contentMd) {
         if (StringUtils.hasText(title)) {
             return title.trim().length() > 255 ? title.trim().substring(0, 255) : title.trim();
         }

@@ -1,5 +1,6 @@
 import { http } from './http'
 import type {
+  BackupImportResult,
   FileAsset,
   FileKind,
   LoginResponse,
@@ -93,6 +94,38 @@ export const userApi = {
   quota: () => http.get<Quota>('/user/quota').then((r) => r.data),
   updateProfile: (nickname: string) => http.put<User>('/user/profile', { nickname }).then((r) => r.data),
   updateAvatar: (fileId: number | null) => http.put<User>('/user/avatar', { fileId }).then((r) => r.data),
+}
+
+/**
+ * 备份走 fetch 而不是 axios：整包下载上传不受全局 30s 超时限制，
+ * 鉴权同样是 cookie，错误信息也在这里自己解析，提示更准确。
+ */
+export const backupApi = {
+  async export(): Promise<Blob> {
+    const res = await fetch('/api/backup', { credentials: 'include' })
+    if (!res.ok) {
+      throw new Error(await readErrorMessage(res))
+    }
+    return res.blob()
+  },
+  async importBackup(file: File): Promise<BackupImportResult> {
+    const form = new FormData()
+    form.append('file', file)
+    const res = await fetch('/api/backup', { method: 'POST', credentials: 'include', body: form })
+    if (!res.ok) {
+      throw new Error(await readErrorMessage(res))
+    }
+    return (await res.json()) as BackupImportResult
+  },
+}
+
+async function readErrorMessage(res: Response): Promise<string> {
+  try {
+    const body = (await res.json()) as { message?: string }
+    return body?.message || `请求失败（${res.status}）`
+  } catch {
+    return `请求失败（${res.status}）`
+  }
 }
 
 /** 站内信：用户只能看，不能删 */

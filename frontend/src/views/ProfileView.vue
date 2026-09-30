@@ -2,11 +2,13 @@
 import { onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { SwitchButton } from '@element-plus/icons-vue'
-import { authApi, fileApi, userApi } from '@/api'
+import { Download, SwitchButton, Upload } from '@element-plus/icons-vue'
+import dayjs from 'dayjs'
+import { authApi, backupApi, fileApi, userApi } from '@/api'
 import { useAuthStore } from '@/stores/auth'
 import { useTheme } from '@/composables/useTheme'
 import { formatFull, formatSize } from '@/utils/format'
+import { downloadBlob } from '@/utils/download'
 import type { Quota } from '@/types'
 import PageHeader from '@/components/PageHeader.vue'
 import UserAvatar from '@/components/UserAvatar.vue'
@@ -135,6 +137,76 @@ async function savePassword() {
   }
 }
 
+// ---------------- 备份与恢复 ----------------
+
+const backingUp = ref(false)
+const restoring = ref(false)
+const restoreInput = ref<HTMLInputElement | null>(null)
+
+function pickRestore() {
+  restoreInput.value?.click()
+}
+
+async function exportBackup() {
+  if (backingUp.value) return
+  try {
+    await ElMessageBox.confirm(
+      '将把全部笔记和附件打包成一个 zip 备份文件，是否继续？',
+      '导出备份',
+      { confirmButtonText: '导出', cancelButtonText: '取消', type: 'info' },
+    )
+  } catch {
+    return
+  }
+  backingUp.value = true
+  try {
+    const blob = await backupApi.export()
+    downloadBlob(`shiyi-backup-${dayjs().format('YYYYMMDD-HHmmss')}.zip`, blob)
+    ElMessage.success('备份已导出')
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '备份导出失败')
+  } finally {
+    backingUp.value = false
+  }
+}
+
+async function onRestorePicked(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file) return
+  if (!file.name.toLowerCase().endsWith('.zip')) {
+    ElMessage.warning('备份文件需要是 .zip')
+    return
+  }
+  try {
+    await ElMessageBox.confirm(
+      '导入会把备份里的笔记新增到当前账号，不会覆盖或删除现有内容；与现有内容相同的笔记不会导入。是否继续？',
+      '导入备份',
+      { confirmButtonText: '开始导入', cancelButtonText: '取消', type: 'info' },
+    )
+  } catch {
+    return
+  }
+  restoring.value = true
+  try {
+    const result = await backupApi.importBackup(file)
+    const parts = [`已导入 ${result.memoCount} 条笔记、${result.attachmentCount} 个附件`]
+    if (result.skippedMemos > 0) {
+      parts.push(`跳过 ${result.skippedMemos} 条相同笔记`)
+    }
+    if (result.skippedAttachments > 0) {
+      parts.push(`${result.skippedAttachments} 个附件已跳过`)
+    }
+    ElMessage.success(parts.join('，'))
+    await refreshQuota()
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '导入失败，请检查备份文件')
+  } finally {
+    restoring.value = false
+  }
+}
+
 async function logout() {
   try {
     await ElMessageBox.confirm('确定要退出登录吗？', '退出', {
@@ -226,6 +298,19 @@ async function logout() {
             />
           </template>
           <p v-else class="muted">用量加载失败。</p>
+        </section>
+
+        <section class="card">
+          <h2>备份与恢复</h2>
+          <div class="backup-actions">
+            <el-button :loading="backingUp" @click="exportBackup">
+              <el-icon><Download /></el-icon><span>导出备份</span>
+            </el-button>
+            <el-button :loading="restoring" @click="pickRestore">
+              <el-icon><Upload /></el-icon><span>导入备份</span>
+            </el-button>
+            <input ref="restoreInput" type="file" accept=".zip,application/zip" hidden @change="onRestorePicked" />
+          </div>
         </section>
 
         <section class="card">
@@ -462,5 +547,12 @@ async function logout() {
 .quota-line {
   margin: 0 0 var(--space-3);
   font-size: 14px;
+}
+
+.backup-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
 }
 </style>

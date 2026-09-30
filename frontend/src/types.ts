@@ -107,6 +107,14 @@ export interface Quota {
   usedPercent: number
 }
 
+export interface BackupImportResult {
+  version: number
+  memoCount: number
+  attachmentCount: number
+  skippedMemos: number
+  skippedAttachments: number
+}
+
 export interface SendCodeResponse {
   sent: boolean
   mailEnabled: boolean
