@@ -3,7 +3,7 @@ import markdownCss from '@/styles/markdown.css?raw'
 import { renderMarkdown } from '@/utils/markdown'
 import { downloadBlob } from '@/utils/download'
 
-export type ExportFormat = 'md' | 'html' | 'pdf' | 'png'
+export type ExportFormat = 'md' | 'html' | 'doc' | 'pdf' | 'png'
 
 export interface ExportableNote {
   title: string
@@ -33,6 +33,10 @@ export async function exportNote(format: ExportFormat, note: ExportableNote) {
           new Blob([await buildStandaloneHtml(note)], { type: 'text/html;charset=utf-8' }),
         )
         ElMessage.success('已导出 HTML')
+        break
+      case 'doc':
+        downloadBlob(`${base}.doc`, await exportWord(note))
+        ElMessage.success('已导出 Word 文档')
         break
       case 'pdf':
         await exportPdf(note, base)
@@ -136,6 +140,80 @@ function blobToDataUrl(blob: Blob): Promise<string> {
     reader.onerror = () => reject(reader.error ?? new Error('读取附件失败'))
     reader.readAsDataURL(blob)
   })
+}
+
+/* ---------------------------------------------------------------------- Word */
+
+/**
+ * .doc 本质是 Word 能直接打开的 HTML（MHT 包一层）。不复用 buildStandaloneHtml
+ * 是因为 Word 的 HTML 引擎不认 CSS 变量，这里用一套写死浅色值的简洁样式，
+ * 渲染和图片内联管线照旧。
+ */
+async function exportWord(note: ExportableNote): Promise<Blob> {
+  const rendered = await inlineAssets(renderMarkdown(note.contentMd))
+  const title = note.title.trim() || '无标题'
+  const today = new Date().toLocaleDateString('zh-CN')
+  const html = `<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>${escapeHtml(title)}</title>
+<style>
+body { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; font-size: 12pt; color: #1c1917; line-height: 1.6; }
+h1, h2, h3, h4 { line-height: 1.35; }
+h1 { font-size: 20pt; } h2 { font-size: 16pt; } h3 { font-size: 14pt; }
+img { max-width: 100%; }
+table { border-collapse: collapse; width: 100%; }
+th, td { border: 1px solid #d6d3d1; padding: 6px 10px; text-align: left; }
+th { background: #f5f5f4; }
+pre { background: #f5f5f4; border: 1px solid #d6d3d1; padding: 10px; font-family: Consolas, monospace; font-size: 10.5pt; white-space: pre-wrap; word-break: break-word; }
+code { font-family: Consolas, monospace; background: #f5f5f4; }
+blockquote { border-left: 3px solid #d6d3d1; margin-left: 0; padding-left: 12px; color: #57534e; }
+a { color: #b45309; }
+.word-title { font-size: 20pt; font-weight: 700; margin: 0 0 4pt; }
+.word-meta { color: #78716c; font-size: 9pt; margin: 0 0 18pt; }
+.word-footer { color: #a8a29e; font-size: 9pt; margin-top: 24pt; }
+</style>
+</head>
+<body>
+<p class="word-title">${escapeHtml(title)}</p>
+<p class="word-meta">导出自「拾忆」 · ${today}</p>
+${rendered}
+<p class="word-footer">由「拾忆」导出</p>
+</body>
+</html>`
+  // 主入口 build/api.js 里有 Rollup 解析不了的 with 语句，用浏览器版 dist
+  const htmlDocx = await loadHtmlDocx()
+  return htmlDocx.asBlob(html)
+}
+
+/* html-docx-js 以 UMD 形态供应商化在 public/lib（npm 主入口的 with 语句
+   无法被 Rollup 打包），这里按需注入 script，只拖慢第一次导出 Word */
+let htmlDocxLoader: Promise<NonNullable<Window['htmlDocx']>> | null = null
+
+function loadHtmlDocx() {
+  htmlDocxLoader ??= new Promise<NonNullable<Window['htmlDocx']>>((resolve, reject) => {
+    if (window.htmlDocx) {
+      resolve(window.htmlDocx)
+      return
+    }
+    const script = document.createElement('script')
+    script.src = '/lib/html-docx.js'
+    script.onload = () => {
+      if (window.htmlDocx) {
+        resolve(window.htmlDocx)
+      } else {
+        htmlDocxLoader = null
+        reject(new Error('Word 组件加载异常'))
+      }
+    }
+    script.onerror = () => {
+      htmlDocxLoader = null
+      reject(new Error('Word 组件加载失败'))
+    }
+    document.head.appendChild(script)
+  })
+  return htmlDocxLoader
 }
 
 /* ---------------------------------------------------------------------- PDF */

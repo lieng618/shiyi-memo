@@ -11,6 +11,16 @@ interface Window {
     /** 把自包含 HTML 交给主进程转 PDF，返回保存路径；用户取消时 canceled 为 true */
     exportPdf?: (html: string, filename: string) => Promise<{ canceled?: boolean; path?: string } | null>
   }
+  /** html-docx-js 的 UMD 构建（public/lib/html-docx.js），导出 Word 时按需加载 */
+  htmlDocx?: {
+    asBlob: (
+      html: string,
+      options?: {
+        orientation?: 'portrait' | 'landscape'
+        margins?: { top?: number; right?: number; bottom?: number; left?: number; header?: number; footer?: number }
+      },
+    ) => Blob
+  }
 }
 
 declare module '*.vue' {

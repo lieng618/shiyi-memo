@@ -225,6 +225,7 @@ async function onExport(format: string | number | object) {
               <el-dropdown-menu>
                 <el-dropdown-item command="md">Markdown（.md）</el-dropdown-item>
                 <el-dropdown-item command="html">网页（.html）</el-dropdown-item>
+                <el-dropdown-item command="doc">Word（.doc）</el-dropdown-item>
                 <el-dropdown-item command="pdf" divided>PDF（.pdf）</el-dropdown-item>
                 <el-dropdown-item command="png">长图（.png）</el-dropdown-item>
               </el-dropdown-menu>
