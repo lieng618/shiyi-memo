@@ -1,20 +1,12 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import DOMPurify from 'dompurify'
-import { marked } from 'marked'
+import { renderMarkdown } from '@/utils/markdown'
 
 const props = defineProps<{ content?: string | null; publicToken?: string | null }>()
 
 const html = computed(() => {
-  const source = props.content ?? ''
-  if (!source.trim()) {
-    return ''
-  }
-  const rendered = marked.parse(source, { gfm: true, breaks: true }) as string
-  const publicHtml = props.publicToken ? rewritePublicAssets(rendered, props.publicToken) : rendered
-  return DOMPurify.sanitize(publicHtml, {
-    ADD_ATTR: ['target', 'controls', 'preload', 'style'],
-  })
+  const rendered = renderMarkdown(props.content ?? '')
+  return props.publicToken ? rewritePublicAssets(rendered, props.publicToken) : rendered
 })
 
 function rewritePublicAssets(html: string, token: string) {

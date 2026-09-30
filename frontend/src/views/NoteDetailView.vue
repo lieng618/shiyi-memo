@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
-import { ArrowLeft } from '@element-plus/icons-vue'
+import { ArrowLeft, Download } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
 import { memoApi, tagApi } from '@/api'
 import type { MemoDetail, Tag } from '@/types'
 import { formatFull } from '@/utils/format'
 import { debounce } from '@/composables/useDebounce'
+import { exportNote, type ExportFormat } from '@/utils/noteExport'
 import MarkdownEditor from '@/components/MarkdownEditor.vue'
 
 const route = useRoute()
@@ -22,6 +24,7 @@ const saveState = ref<'idle' | 'saving' | 'saved' | 'error'>('idle')
 const savedAt = ref<string | null>(null)
 const titleRef = ref<HTMLInputElement | null>(null)
 const dirty = ref(false)
+const exporting = ref(false)
 
 let applyingRemote = false
 let changeVersion = 0
@@ -147,6 +150,20 @@ function onTagsChanged() {
   void save()
 }
 
+/** 导出用的是编辑器里的最新内容，没保存的部分也在内 */
+async function onExport(format: string | number | object) {
+  if (!detail.value || exporting.value) return
+  exporting.value = true
+  try {
+    await exportNote(format as ExportFormat, {
+      title: title.value.trim() || detail.value.title,
+      contentMd: contentMd.value,
+    })
+  } finally {
+    exporting.value = false
+  }
+}
+
 </script>
 
 <template>
@@ -190,7 +207,31 @@ function onTagsChanged() {
 
     <div class="editor-wrap">
       <el-skeleton v-if="loading" :rows="6" animated class="editor-skeleton" />
-      <MarkdownEditor v-else v-model="contentMd" :memo-id="noteId" />
+      <MarkdownEditor v-else v-model="contentMd" :memo-id="noteId">
+        <template #toolbar-end>
+          <el-dropdown trigger="click" placement="bottom-end" @command="onExport">
+            <button
+              type="button"
+              class="toolbar-export"
+              :disabled="exporting"
+              aria-label="导出笔记"
+              aria-haspopup="menu"
+              title="导出"
+              @mousedown.prevent
+            >
+              <el-icon :size="15"><Download /></el-icon>
+            </button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="md">Markdown（.md）</el-dropdown-item>
+                <el-dropdown-item command="html">网页（.html）</el-dropdown-item>
+                <el-dropdown-item command="pdf" divided>PDF（.pdf）</el-dropdown-item>
+                <el-dropdown-item command="png">长图（.png）</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+        </template>
+      </MarkdownEditor>
     </div>
   </div>
 </template>
@@ -295,6 +336,35 @@ function onTagsChanged() {
   min-height: 0;
   display: flex;
   flex-direction: column;
+}
+
+/* 插槽塞进 MarkdownEditor 工具栏的导出按钮：插槽内容带的是本组件的
+   scope 属性，编辑器里的 .editor-toolbar button 够不到它，这里补齐同款样式 */
+.toolbar-export {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 30px;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-2);
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.toolbar-export:hover:not(:disabled) {
+  background: var(--panel-hover);
+  color: var(--text);
+}
+
+.toolbar-export:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .editor-skeleton {

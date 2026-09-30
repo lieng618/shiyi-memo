@@ -857,6 +857,9 @@ watch(
         <el-icon :size="15"><ClearIcon /></el-icon>
       </button>
 
+      <!-- 工具栏末尾留给页面注入的低频操作（如导出），样式随工具栏按钮 -->
+      <slot name="toolbar-end" />
+
       <input ref="imageInput" type="file" accept="image/*" hidden @change="onFilePicked($event, 'image')" />
       <input ref="fileInput" type="file" hidden @change="onFilePicked($event, 'file')" />
     </div>

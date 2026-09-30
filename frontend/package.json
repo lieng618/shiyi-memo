@@ -12,10 +12,12 @@
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.2",
     "@fontsource-variable/inter": "^5.2.8",
+    "@zumer/snapdom": "^3.2.0",
     "axios": "^1.13.2",
     "dayjs": "^1.11.19",
     "dompurify": "^3.3.0",
     "element-plus": "^2.11.8",
+    "html2pdf.js": "^0.14.0",
     "marked": "^16.4.1",
     "pinia": "^3.0.4",
     "turndown": "^7.2.4",
