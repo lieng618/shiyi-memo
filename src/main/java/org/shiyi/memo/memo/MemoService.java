@@ -6,12 +6,16 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
 import org.shiyi.memo.common.ApiException;
 import org.shiyi.memo.common.PageResult;
+import org.shiyi.memo.friend.FriendService;
 import org.shiyi.memo.file.FileService;
+import org.shiyi.memo.file.entity.FileAsset;
 import org.shiyi.memo.file.dto.FileDtos;
 import org.shiyi.memo.file.mapper.FileAssetMapper;
 import org.shiyi.memo.memo.dto.MemoDtos;
 import org.shiyi.memo.memo.entity.Memo;
 import org.shiyi.memo.memo.mapper.MemoMapper;
+import org.shiyi.memo.security.AuthContext;
+import org.shiyi.memo.security.AuthUser;
 import org.shiyi.memo.tag.TagService;
 import org.shiyi.memo.tag.dto.TagDtos;
 import org.shiyi.memo.tag.entity.Tag;
@@ -21,7 +25,9 @@ import org.shiyi.memo.user.entity.AppUser;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
+import org.springframework.web.util.UriUtils;
 
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -43,6 +49,7 @@ public class MemoService {
     private final TagService tagService;
     private final FileService fileService;
     private final UserService userService;
+    private final FriendService friendService;
 
     public PageResult<MemoDtos.MemoSummary> list(long userId, String keyword, Collection<Long> tagIds,
                                                  Boolean pinned, long page, long size) {
@@ -186,8 +193,22 @@ public class MemoService {
     public MemoDtos.PublicMemoDetail publicDetail(String token) {
         Memo memo = requirePublicShare(token);
         AppUser owner = userService.get(memo.getUserId());
+        FileAsset avatar = fileService.publicAvatar(owner);
+        AuthUser viewer = AuthContext.get();
+        boolean friend = viewer != null && friendService.isFriend(viewer.id(), owner.getId());
         return new MemoDtos.PublicMemoDetail(memo.getId(), memo.getTitle(), memo.getContentMd(),
-                owner.getId(), owner.getNickname(), memo.getUpdatedAt());
+                owner.getId(), owner.getNickname(), ownerAvatarUrl(token, avatar), friend,
+                memo.getUpdatedAt());
+    }
+
+    public FileAsset publicOwnerAvatar(String token) {
+        Memo memo = requirePublicShare(token);
+        AppUser owner = userService.get(memo.getUserId());
+        FileAsset avatar = fileService.publicAvatar(owner);
+        if (avatar == null) {
+            throw ApiException.notFound("头像不存在");
+        }
+        return avatar;
     }
 
     /** 删除就是真删：附件、磁盘文件、标签关联一起清掉 */
@@ -269,6 +290,14 @@ public class MemoService {
             covers.put(memoId, "/api/files/" + fileId + "/thumb?w=320");
         }
         return covers;
+    }
+
+    private static String ownerAvatarUrl(String token, FileAsset avatar) {
+        if (avatar == null) {
+            return null;
+        }
+        return "/api/public/memos/" + UriUtils.encodePathSegment(token, StandardCharsets.UTF_8)
+                + "/owner-avatar";
     }
 
     /**

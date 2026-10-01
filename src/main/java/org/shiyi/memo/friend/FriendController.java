@@ -16,7 +16,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 
 /**
- * 好友：申请走站内信，同意后才能聊天。
+ * 好友：申请、处理、关系都在好友页完成，同意后才能聊天。
  */
 @RestController
 @RequestMapping("/api/friends")
@@ -45,15 +45,39 @@ public class FriendController {
         friendService.sendRequest(AuthContext.requireUserId(), request.toUserId());
     }
 
-    /** messageId = 那封申请站内信的 id */
-    @PostMapping("/requests/{messageId}/accept")
-    public void accept(@PathVariable long messageId) {
-        friendService.handleRequest(AuthContext.requireUserId(), messageId, true);
+    @GetMapping("/requests")
+    public FriendDtos.FriendRequestListDto requests() {
+        return friendService.requests(AuthContext.requireUserId());
     }
 
-    @PostMapping("/requests/{messageId}/reject")
-    public void reject(@PathVariable long messageId) {
-        friendService.handleRequest(AuthContext.requireUserId(), messageId, false);
+    @GetMapping("/requests/count")
+    public FriendDtos.RequestCountDto requestCount() {
+        return new FriendDtos.RequestCountDto(friendService.pendingCount(AuthContext.requireUserId()));
+    }
+
+    @GetMapping("/summary")
+    public FriendDtos.FriendSummaryDto summary() {
+        return friendService.summary(AuthContext.requireUserId());
+    }
+
+    @GetMapping("/notifications")
+    public List<FriendDtos.FriendNotificationDto> notifications() {
+        return friendService.notifications(AuthContext.requireUserId());
+    }
+
+    @PostMapping("/requests/{requestId}/accept")
+    public void accept(@PathVariable long requestId) {
+        friendService.handleRequest(AuthContext.requireUserId(), requestId, true);
+    }
+
+    @PostMapping("/requests/{requestId}/reject")
+    public void reject(@PathVariable long requestId) {
+        friendService.handleRequest(AuthContext.requireUserId(), requestId, false);
+    }
+
+    @DeleteMapping("/requests/{requestId}")
+    public void cancel(@PathVariable long requestId) {
+        friendService.cancelRequest(AuthContext.requireUserId(), requestId);
     }
 
     @GetMapping("/{userId}/chat")

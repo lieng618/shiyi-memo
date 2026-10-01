@@ -11,14 +11,12 @@ public final class MessageDtos {
     }
 
     public record MessageDto(Long id, String title, String content, String type,
-                             Long refMemoId, Long refFileId, Long refUserId, String requestStatus,
-                             String senderName,
+                             Long refMemoId, Long refFileId, String senderName,
                              LocalDateTime readAt, LocalDateTime createdAt) {
 
         public static MessageDto from(UserMessage message) {
             return new MessageDto(message.getId(), message.getTitle(), message.getContent(), message.getType(),
-                    message.getRefMemoId(), message.getRefFileId(), message.getRefUserId(), message.getRequestStatus(),
-                    message.getSenderName(),
+                    message.getRefMemoId(), message.getRefFileId(), message.getSenderName(),
                     message.getReadAt(), message.getCreatedAt());
         }
     }

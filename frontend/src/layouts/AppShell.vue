@@ -2,9 +2,14 @@
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { Bell, Edit, Link, User } from '@element-plus/icons-vue'
+import { friendApi } from '@/api'
+import type { FriendNotification } from '@/types'
 import { useAuthStore } from '@/stores/auth'
 import { useCreateNote } from '@/composables/useCreateNote'
+import { useFriendSummary } from '@/composables/useFriendSummary'
 import { useUnreadMessages } from '@/composables/useUnreadMessages'
+import { onRealtime } from '@/composables/useRealtime'
+import { formatFull } from '@/utils/format'
 import UserAvatar from '@/components/UserAvatar.vue'
 import OpenShareDialog from '@/components/OpenShareDialog.vue'
 
@@ -12,18 +17,75 @@ const auth = useAuthStore()
 const router = useRouter()
 const createNote = useCreateNote()
 const { unread, refresh: refreshUnread } = useUnreadMessages()
+const {
+  total: friendUnread,
+  refresh: refreshFriendSummary,
+} = useFriendSummary()
 const creating = ref(false)
 const shareOpen = ref(false)
+const friendPreviewOpen = ref(false)
+const friendPreviewLoading = ref(false)
+const friendNotifications = ref<FriendNotification[]>([])
 
 let timer: ReturnType<typeof setInterval> | undefined
+let offChat: (() => void) | undefined
+let offFriends: (() => void) | undefined
 
 onMounted(() => {
   void refreshUnread()
+  void refreshFriendSummary()
+  void loadFriendNotifications()
+  offChat = onRealtime('chat', () => {
+    void refreshFriendSummary()
+    void loadFriendNotifications(true)
+  })
+  offFriends = onRealtime('friends', () => {
+    void loadFriendNotifications(true)
+  })
   // 站内信可能随时被后台发出，这里定时拉一下未读数
-  timer = setInterval(() => void refreshUnread(), 60_000)
+  timer = setInterval(() => {
+    void refreshUnread()
+    void refreshFriendSummary()
+    void loadFriendNotifications(true)
+  }, 60_000)
 })
 
-onBeforeUnmount(() => clearInterval(timer))
+onBeforeUnmount(() => {
+  clearInterval(timer)
+  offChat?.()
+  offFriends?.()
+})
+
+async function loadFriendNotifications(silent = false) {
+  if (!silent) {
+    friendPreviewLoading.value = true
+  }
+  try {
+    friendNotifications.value = await friendApi.notifications()
+  } finally {
+    if (!silent) {
+      friendPreviewLoading.value = false
+    }
+  }
+}
+
+function refreshFriendNotifications() {
+  void loadFriendNotifications(true)
+}
+
+async function openFriendNotification(item: FriendNotification) {
+  friendPreviewOpen.value = false
+  if (item.type === 'FRIEND_REQUEST') {
+    await router.push({ path: '/friends', query: { tab: 'requests' } })
+    return
+  }
+  await router.push(`/friends/${item.userId}`)
+}
+
+function viewAllFriends() {
+  friendPreviewOpen.value = false
+  void router.push('/friends')
+}
 
 async function onNew() {
   if (creating.value) return
@@ -50,15 +112,62 @@ async function onNew() {
           <el-icon :size="16"><Edit /></el-icon>
           <span>新建笔记</span>
         </button>
-        <button
-          type="button"
-          class="icon-round"
-          title="好友"
-          aria-label="好友"
-          @click="router.push('/friends')"
+        <el-popover
+          v-model:visible="friendPreviewOpen"
+          trigger="hover"
+          placement="bottom-end"
+          width="320"
+          :show-arrow="false"
+          :disabled="friendUnread === 0"
+          :popper-style="{ padding: '0', borderRadius: '10px', overflow: 'hidden' }"
+          @show="refreshFriendNotifications"
         >
-          <el-icon :size="18"><User /></el-icon>
-        </button>
+          <template #reference>
+            <button
+              type="button"
+              class="icon-round"
+              :aria-label="friendUnread > 0 ? `好友，${friendUnread} 条新动态` : '好友'"
+              @click="viewAllFriends"
+            >
+              <el-badge :value="friendUnread" :hidden="friendUnread === 0" :max="99" class="header-badge">
+                <el-icon :size="18"><User /></el-icon>
+              </el-badge>
+            </button>
+          </template>
+
+          <div class="friend-preview">
+            <header class="friend-preview-head">
+              <strong>新动态</strong>
+              <span class="muted">{{ friendUnread }} 条</span>
+            </header>
+
+            <div v-if="friendPreviewLoading && !friendNotifications.length" class="friend-preview-loading">
+              <el-skeleton :rows="2" animated />
+            </div>
+
+            <div v-else-if="friendNotifications.length" class="friend-preview-list">
+              <button
+                v-for="item in friendNotifications"
+                :key="`${item.type}-${item.userId}`"
+                type="button"
+                class="friend-preview-item"
+                @click="openFriendNotification(item)"
+              >
+                <UserAvatar :user="item" :size="34" />
+                <span class="friend-preview-copy">
+                  <strong>{{ item.nickname }}</strong>
+                  <span>{{ item.content }}</span>
+                </span>
+                <span class="friend-preview-meta">
+                  <span v-if="item.unread" class="preview-count">{{ item.unread }}</span>
+                  <time class="tnum">{{ formatFull(item.createdAt) }}</time>
+                </span>
+              </button>
+            </div>
+
+            <div v-else class="friend-preview-empty">暂无新动态</div>
+          </div>
+        </el-popover>
         <button
           type="button"
           class="icon-round"
@@ -66,7 +175,7 @@ async function onNew() {
           :aria-label="unread > 0 ? `站内信，${unread} 条未读` : '站内信'"
           @click="router.push('/messages')"
         >
-          <el-badge :value="unread" :hidden="unread === 0" :max="99" class="msg-badge">
+          <el-badge :value="unread" :hidden="unread === 0" :max="99" class="header-badge">
             <el-icon :size="18"><Bell /></el-icon>
           </el-badge>
         </button>
@@ -235,11 +344,113 @@ async function onNew() {
 }
 
 /* 未读角标：琥珀底 + 深色字，和主色一致 */
-.msg-badge :deep(.el-badge__content) {
+.header-badge :deep(.el-badge__content) {
   background: var(--danger-fill);
   color: #fff;
   border: none;
   font-variant-numeric: tabular-nums;
+}
+
+.friend-preview {
+  color: var(--text);
+}
+
+.friend-preview-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 42px;
+  padding: 0 var(--space-3);
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+
+.friend-preview-loading {
+  padding: var(--space-3);
+}
+
+.friend-preview-list {
+  max-height: 320px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.friend-preview-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+  padding: 10px var(--space-3);
+  border: none;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.friend-preview-item:hover,
+.friend-preview-item:focus-visible {
+  background: var(--panel-2);
+}
+
+.friend-preview-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.friend-preview-copy strong,
+.friend-preview-copy > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.friend-preview-copy strong {
+  font-size: 13px;
+}
+
+.friend-preview-copy > span {
+  color: var(--text-3);
+  font-size: 12px;
+}
+
+.friend-preview-meta {
+  display: flex;
+  align-items: flex-end;
+  flex-direction: column;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+
+.friend-preview-meta time {
+  color: var(--text-3);
+  font-size: 10.5px;
+  white-space: nowrap;
+}
+
+.preview-count {
+  min-width: 18px;
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: var(--danger-fill);
+  color: #fff;
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.friend-preview-empty {
+  padding: var(--space-5) var(--space-3);
+  color: var(--text-3);
+  font-size: 13px;
+  text-align: center;
 }
 
 .shell-content {

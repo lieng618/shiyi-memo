@@ -82,6 +82,8 @@ export interface PublicMemoDetail {
   contentMd: string
   ownerId: number
   ownerName: string
+  ownerAvatarUrl?: string | null
+  friend: boolean
   updatedAt: string
 }
 
@@ -128,10 +130,9 @@ export interface LoginResponse {
   expiresInSeconds: number
 }
 
-export type MessageType = 'NOTICE' | 'FILE_BLOCKED' | 'MEMO_REMOVED' | 'FRIEND_REQUEST'
+export type MessageType = 'NOTICE' | 'FILE_BLOCKED' | 'MEMO_REMOVED'
 
-/** 好友申请的处理状态，只在 type = FRIEND_REQUEST 的站内信上有值 */
-export type FriendRequestStatus = 'PENDING' | 'ACCEPTED' | 'REJECTED'
+export type FriendRequestStatus = 'PENDING' | 'ACCEPTED' | 'REJECTED' | 'CANCELED'
 
 export interface UserMessage {
   id: number
@@ -140,9 +141,6 @@ export interface UserMessage {
   type: MessageType
   refMemoId?: number | null
   refFileId?: number | null
-  /** FRIEND_REQUEST 时的申请人用户 id */
-  refUserId?: number | null
-  requestStatus?: FriendRequestStatus | null
   senderName: string
   readAt?: string | null
   createdAt: string
@@ -160,6 +158,35 @@ export interface UserSearchResult {
   userId: number
   nickname: string
   avatarUrl?: string | null
+}
+
+export interface FriendRequest {
+  id: number
+  userId: number
+  nickname: string
+  avatarUrl?: string | null
+  status: FriendRequestStatus
+  createdAt: string
+}
+
+export interface FriendRequestList {
+  incoming: FriendRequest[]
+  outgoing: FriendRequest[]
+}
+
+export interface FriendSummary {
+  pendingRequests: number
+  unreadChats: number
+}
+
+export interface FriendNotification {
+  type: 'CHAT' | 'FRIEND_REQUEST'
+  userId: number
+  nickname: string
+  avatarUrl?: string | null
+  content: string
+  unread: number
+  createdAt: string
 }
 
 export interface ChatMessage {

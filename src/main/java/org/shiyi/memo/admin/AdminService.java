@@ -65,8 +65,11 @@ public class AdminService {
                 fileMapper.selectCount(null),
                 fileMapper.selectCount(Wrappers.lambdaQuery(FileAsset.class).eq(FileAsset::getBlocked, true)),
                 storage,
-                messageMapper.selectCount(null),
-                messageMapper.selectCount(Wrappers.lambdaQuery(UserMessage.class).isNull(UserMessage::getReadAt)));
+                messageMapper.selectCount(Wrappers.lambdaQuery(UserMessage.class)
+                        .ne(UserMessage::getType, "FRIEND_REQUEST")),
+                messageMapper.selectCount(Wrappers.lambdaQuery(UserMessage.class)
+                        .ne(UserMessage::getType, "FRIEND_REQUEST")
+                        .isNull(UserMessage::getReadAt)));
     }
 
     // ---------------- 用户 ----------------
@@ -317,7 +320,9 @@ public class AdminService {
 
     public PageResult<AdminDtos.AdminMessageDto> listMessages(Long userId, long page, long size) {
         var wrapper = Wrappers.lambdaQuery(UserMessage.class);
-        wrapper.eq(userId != null, UserMessage::getUserId, userId).orderByDesc(UserMessage::getId);
+        wrapper.ne(UserMessage::getType, "FRIEND_REQUEST")
+                .eq(userId != null, UserMessage::getUserId, userId)
+                .orderByDesc(UserMessage::getId);
         IPage<UserMessage> result = messageMapper.selectPage(new Page<>(page, size), wrapper);
         List<UserMessage> messages = result.getRecords();
         Map<Long, AppUser> users = messages.isEmpty()

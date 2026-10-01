@@ -4,9 +4,12 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import org.shiyi.memo.friend.entity.ChatMessage;
+import org.shiyi.memo.friend.entity.FriendRequest;
 import org.shiyi.memo.user.entity.AppUser;
+import org.shiyi.memo.user.dto.UserDtos;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 public final class FriendDtos {
 
@@ -18,10 +21,7 @@ public final class FriendDtos {
                             long unread, LocalDateTime friendedAt) {
 
         public static FriendDto from(AppUser user, long unread, LocalDateTime friendedAt) {
-            String avatarUrl = user.getAvatarFileId() == null
-                    ? null
-                    : "/api/files/" + user.getAvatarFileId() + "/thumb?w=160";
-            return new FriendDto(user.getId(), user.getNickname(), avatarUrl, unread, friendedAt);
+            return new FriendDto(user.getId(), user.getNickname(), UserDtos.avatarUrl(user), unread, friendedAt);
         }
     }
 
@@ -29,14 +29,35 @@ public final class FriendDtos {
     public record UserSearchDto(long userId, String nickname, String avatarUrl) {
 
         public static UserSearchDto from(AppUser user) {
-            String avatarUrl = user.getAvatarFileId() == null
-                    ? null
-                    : "/api/files/" + user.getAvatarFileId() + "/thumb?w=160";
-            return new UserSearchDto(user.getId(), user.getNickname(), avatarUrl);
+            return new UserSearchDto(user.getId(), user.getNickname(), UserDtos.avatarUrl(user));
         }
     }
 
     public record SendRequestRequest(@NotNull Long toUserId) {
+    }
+
+    /** 好友页申请列表：incoming = 收到的，outgoing = 我发出的 */
+    public record FriendRequestListDto(List<FriendRequestDto> incoming,
+                                       List<FriendRequestDto> outgoing) {
+    }
+
+    public record FriendRequestDto(long id, long userId, String nickname, String avatarUrl,
+                                   String status, LocalDateTime createdAt) {
+
+        public static FriendRequestDto from(FriendRequest request, AppUser other) {
+            return new FriendRequestDto(request.getId(), other.getId(), other.getNickname(),
+                    UserDtos.avatarUrl(other), request.getStatus(), request.getCreatedAt());
+        }
+    }
+
+    public record RequestCountDto(long count) {
+    }
+
+    public record FriendSummaryDto(long pendingRequests, long unreadChats) {
+    }
+
+    public record FriendNotificationDto(String type, long userId, String nickname, String avatarUrl,
+                                        String content, long unread, LocalDateTime createdAt) {
     }
 
     public record ChatMessageDto(long id, long senderId, boolean mine, String content, LocalDateTime createdAt) {

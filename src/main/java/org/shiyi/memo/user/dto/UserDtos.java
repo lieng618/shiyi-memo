@@ -14,6 +14,14 @@ public final class UserDtos {
     private UserDtos() {
     }
 
+    /** 用户头像统一走按用户读取的接口，避免暴露附件归属权限问题。 */
+    public static String avatarUrl(AppUser user) {
+        if (user == null || user.getAvatarFileId() == null) {
+            return null;
+        }
+        return "/api/user/" + user.getId() + "/avatar?w=160&v=" + user.getAvatarFileId();
+    }
+
     public record LevelDto(Long id, String code, String name, Long maxStorage,
                            String description, Integer sort, Boolean isDefault, Long userCount) {
 
@@ -32,11 +40,8 @@ public final class UserDtos {
                           LocalDateTime lastLoginAt, LocalDateTime createdAt) {
 
         public static UserDto from(AppUser user, UserLevel level) {
-            String avatarUrl = user.getAvatarFileId() == null
-                    ? null
-                    : "/api/files/" + user.getAvatarFileId() + "/thumb?w=160";
             boolean hasPassword = user.getPasswordHash() != null && !user.getPasswordHash().isBlank();
-            return new UserDto(user.getId(), user.getEmail(), user.getNickname(), avatarUrl,
+            return new UserDto(user.getId(), user.getEmail(), user.getNickname(), UserDtos.avatarUrl(user),
                     hasPassword, user.getStatus(),
                     level == null ? null : LevelDto.from(level),
                     user.getStorageUsed(),
@@ -66,7 +71,8 @@ public final class UserDtos {
                                Boolean isDefault) {
     }
 
-    public record UpdateAvatarRequest(@NotNull Long fileId) {
+    /** fileId = null 表示恢复默认头像。 */
+    public record UpdateAvatarRequest(Long fileId) {
     }
 
     /** 已登录用户直接设置新密码，不再重复校验邮箱验证码。 */

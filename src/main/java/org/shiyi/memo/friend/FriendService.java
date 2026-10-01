@@ -7,18 +7,22 @@ import org.shiyi.memo.common.ApiException;
 import org.shiyi.memo.friend.dto.FriendDtos;
 import org.shiyi.memo.friend.entity.ChatMessage;
 import org.shiyi.memo.friend.entity.Friend;
+import org.shiyi.memo.friend.entity.FriendRequest;
 import org.shiyi.memo.friend.mapper.ChatMessageMapper;
 import org.shiyi.memo.friend.mapper.FriendMapper;
-import org.shiyi.memo.message.MessageService;
-import org.shiyi.memo.message.entity.UserMessage;
-import org.shiyi.memo.message.mapper.UserMessageMapper;
+import org.shiyi.memo.friend.mapper.FriendRequestMapper;
+import org.shiyi.memo.realtime.RealtimeEventService;
+import org.shiyi.memo.user.dto.UserDtos;
 import org.shiyi.memo.user.entity.AppUser;
 import org.shiyi.memo.user.mapper.AppUserMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -27,8 +31,7 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /**
- * 好友：申请沿用站内信（type = FRIEND_REQUEST，ref_user_id = 申请人），
- * 同意后写双向 friend 行；聊天是独立的 chat_message 表，一条消息一行。
+ * 好友：申请、处理、关系都独立管理；聊天是独立的 chat_message 表，一条消息一行。
  */
 @Service
 @RequiredArgsConstructor
@@ -37,12 +40,13 @@ public class FriendService {
     public static final String REQUEST_PENDING = "PENDING";
     public static final String REQUEST_ACCEPTED = "ACCEPTED";
     public static final String REQUEST_REJECTED = "REJECTED";
+    public static final String REQUEST_CANCELED = "CANCELED";
 
     private final FriendMapper friendMapper;
+    private final FriendRequestMapper requestMapper;
     private final ChatMessageMapper chatMessageMapper;
-    private final UserMessageMapper messageMapper;
     private final AppUserMapper userMapper;
-    private final MessageService messageService;
+    private final RealtimeEventService realtimeEventService;
 
     /* ---------------------------------------------------------------- 好友列表 */
 
@@ -74,6 +78,8 @@ public class FriendService {
                 .eq(Friend::getUserId, userId).eq(Friend::getFriendId, friendId));
         friendMapper.delete(Wrappers.lambdaQuery(Friend.class)
                 .eq(Friend::getUserId, friendId).eq(Friend::getFriendId, userId));
+        realtimeEventService.sendAfterCommit(userId, "friends", "refresh");
+        realtimeEventService.sendAfterCommit(friendId, "friends", "refresh");
     }
 
     /* ---------------------------------------------------------------- 好友申请 */
@@ -109,47 +115,128 @@ public class FriendService {
         if (isFriend(userId, toUserId)) {
             throw ApiException.badRequest("你们已经是好友了");
         }
-        AppUser me = requireUser(userId);
-        if (hasPendingRequest(toUserId, userId)) {
+        requireUser(userId);
+        if (hasPendingRequest(userId, toUserId)) {
             throw ApiException.badRequest("已发送过好友申请，等待对方处理");
         }
-        if (hasPendingRequest(userId, toUserId)) {
-            throw ApiException.badRequest("对方已向你发送好友申请，请在站内信里处理");
+        if (hasPendingRequest(toUserId, userId)) {
+            throw ApiException.badRequest("对方已向你发送好友申请，请在好友页处理");
         }
 
-        UserMessage request = new UserMessage();
-        request.setUserId(toUserId);
-        request.setTitle("好友申请");
-        request.setContent("「" + me.getNickname() + "」（" + me.getEmail() + "）请求加你为好友。");
-        request.setType(MessageService.TYPE_FRIEND_REQUEST);
-        request.setRefUserId(userId);
-        request.setRequestStatus(REQUEST_PENDING);
-        request.setSenderName(me.getNickname());
+        FriendRequest request = new FriendRequest();
+        request.setFromUserId(userId);
+        request.setToUserId(toUserId);
+        request.setStatus(REQUEST_PENDING);
         request.setCreatedAt(LocalDateTime.now());
-        messageMapper.insert(request);
+        requestMapper.insert(request);
+        realtimeEventService.sendAfterCommit(toUserId, "friends", "refresh");
+        realtimeEventService.sendAfterCommit(userId, "friends", "refresh");
     }
 
-    /** 同意或拒绝；messageId 就是那封申请站内信的 id。拒绝保持沉默，不打扰对方 */
+    public FriendDtos.FriendRequestListDto requests(long userId) {
+        List<FriendRequest> incoming = requestMapper.selectList(Wrappers.lambdaQuery(FriendRequest.class)
+                .eq(FriendRequest::getToUserId, userId)
+                .orderByDesc(FriendRequest::getId)
+                .last("limit 50"));
+        List<FriendRequest> outgoing = requestMapper.selectList(Wrappers.lambdaQuery(FriendRequest.class)
+                .eq(FriendRequest::getFromUserId, userId)
+                .orderByDesc(FriendRequest::getId)
+                .last("limit 50"));
+
+        List<Long> userIds = incoming.stream().map(FriendRequest::getFromUserId)
+                .collect(Collectors.toList());
+        userIds.addAll(outgoing.stream().map(FriendRequest::getToUserId).toList());
+        Map<Long, AppUser> users = usersOf(userIds);
+
+        return new FriendDtos.FriendRequestListDto(
+                incoming.stream().map(request -> {
+                    AppUser other = users.get(request.getFromUserId());
+                    return other == null ? null : FriendDtos.FriendRequestDto.from(request, other);
+                }).filter(Objects::nonNull).toList(),
+                outgoing.stream().map(request -> {
+                    AppUser other = users.get(request.getToUserId());
+                    return other == null ? null : FriendDtos.FriendRequestDto.from(request, other);
+                }).filter(Objects::nonNull).toList());
+    }
+
+    public long pendingCount(long userId) {
+        return requestMapper.selectCount(Wrappers.lambdaQuery(FriendRequest.class)
+                .eq(FriendRequest::getToUserId, userId)
+                .eq(FriendRequest::getStatus, REQUEST_PENDING));
+    }
+
+    public FriendDtos.FriendSummaryDto summary(long userId) {
+        return new FriendDtos.FriendSummaryDto(pendingCount(userId), unreadTotal(userId));
+    }
+
+    /** 顶部好友按钮悬停预览：未读聊天 + 待处理好友申请。 */
+    public List<FriendDtos.FriendNotificationDto> notifications(long userId) {
+        List<ChatMessage> chatRows = chatMessageMapper.selectList(Wrappers.lambdaQuery(ChatMessage.class)
+                .eq(ChatMessage::getRecipientId, userId)
+                .isNull(ChatMessage::getReadAt)
+                .orderByDesc(ChatMessage::getId)
+                .last("limit 100"));
+        Map<Long, ChatMessage> latest = new LinkedHashMap<>();
+        Map<Long, Long> unread = new LinkedHashMap<>();
+        for (ChatMessage row : chatRows) {
+            latest.putIfAbsent(row.getSenderId(), row);
+            unread.merge(row.getSenderId(), 1L, Long::sum);
+        }
+        List<FriendRequest> requestRows = requestMapper.selectList(Wrappers.lambdaQuery(FriendRequest.class)
+                .eq(FriendRequest::getToUserId, userId)
+                .eq(FriendRequest::getStatus, REQUEST_PENDING)
+                .orderByDesc(FriendRequest::getId)
+                .last("limit 50"));
+
+        List<Long> userIds = new ArrayList<>(latest.keySet());
+        userIds.addAll(requestRows.stream().map(FriendRequest::getFromUserId).toList());
+        Map<Long, AppUser> users = usersOf(userIds);
+        List<FriendDtos.FriendNotificationDto> result = new ArrayList<>();
+
+        latest.forEach((senderId, message) -> {
+            AppUser sender = users.get(senderId);
+            if (sender != null) {
+                result.add(new FriendDtos.FriendNotificationDto("CHAT", sender.getId(), sender.getNickname(),
+                        UserDtos.avatarUrl(sender), preview(message.getContent()),
+                        unread.getOrDefault(senderId, 0L), message.getCreatedAt()));
+            }
+        });
+        for (FriendRequest request : requestRows) {
+            AppUser applicant = users.get(request.getFromUserId());
+            if (applicant != null) {
+                result.add(new FriendDtos.FriendNotificationDto("FRIEND_REQUEST", applicant.getId(),
+                        applicant.getNickname(), UserDtos.avatarUrl(applicant),
+                        "请求加你为好友", 1, request.getCreatedAt()));
+            }
+        }
+        return result.stream()
+                .sorted(Comparator.comparing(FriendDtos.FriendNotificationDto::createdAt).reversed())
+                .limit(20)
+                .toList();
+    }
+
+    /** 同意或拒绝；拒绝保持沉默，不打扰对方。 */
     @Transactional
-    public void handleRequest(long userId, long messageId, boolean accept) {
-        UserMessage message = messageMapper.selectById(messageId);
-        if (message == null || !MessageService.TYPE_FRIEND_REQUEST.equals(message.getType())) {
+    public void handleRequest(long userId, long requestId, boolean accept) {
+        FriendRequest request = requestMapper.selectById(requestId);
+        if (request == null) {
             throw ApiException.notFound("好友申请不存在");
         }
-        if (!Objects.equals(message.getUserId(), userId)) {
+        if (!Objects.equals(request.getToUserId(), userId)) {
             throw ApiException.forbidden("只能处理发给自己的好友申请");
         }
-        if (!REQUEST_PENDING.equals(message.getRequestStatus())) {
+        if (!REQUEST_PENDING.equals(request.getStatus())) {
             throw ApiException.badRequest("该申请已处理过了");
         }
-        Long requesterId = message.getRefUserId();
+        Long requesterId = request.getFromUserId();
         AppUser requester = requesterId == null ? null : userMapper.selectById(requesterId);
         if (requester == null) {
             throw ApiException.badRequest("对方账号不存在");
         }
 
-        message.setRequestStatus(accept ? REQUEST_ACCEPTED : REQUEST_REJECTED);
-        messageMapper.updateById(message);
+        request.setStatus(accept ? REQUEST_ACCEPTED : REQUEST_REJECTED);
+        request.setHandledAt(LocalDateTime.now());
+        requestMapper.updateById(request);
         if (!accept) {
             return;
         }
@@ -157,11 +244,27 @@ public class FriendService {
         if (!isFriend(userId, requesterId)) {
             insertFriendBothWays(userId, requesterId);
         }
-        // 通过了才通知对方一声，附上口信让TA来聊天
-        AppUser me = requireUser(userId);
-        messageService.send(requesterId, "好友申请已通过",
-                "「" + me.getNickname() + "」已同意你的好友申请，去好友页和TA聊聊吧。",
-                MessageService.TYPE_NOTICE, null, null, me.getNickname());
+        realtimeEventService.sendAfterCommit(userId, "friends", "refresh");
+        realtimeEventService.sendAfterCommit(requesterId, "friends", "refresh");
+    }
+
+    @Transactional
+    public void cancelRequest(long userId, long requestId) {
+        FriendRequest request = requestMapper.selectById(requestId);
+        if (request == null) {
+            throw ApiException.notFound("好友申请不存在");
+        }
+        if (!Objects.equals(request.getFromUserId(), userId)) {
+            throw ApiException.forbidden("只能撤回自己发出的好友申请");
+        }
+        if (!REQUEST_PENDING.equals(request.getStatus())) {
+            throw ApiException.badRequest("该申请已处理过了");
+        }
+        request.setStatus(REQUEST_CANCELED);
+        request.setHandledAt(LocalDateTime.now());
+        requestMapper.updateById(request);
+        realtimeEventService.sendAfterCommit(userId, "friends", "refresh");
+        realtimeEventService.sendAfterCommit(request.getToUserId(), "friends", "refresh");
     }
 
     /* ---------------------------------------------------------------- 聊天 */
@@ -202,7 +305,9 @@ public class FriendService {
         message.setContent(content.trim());
         message.setCreatedAt(LocalDateTime.now());
         chatMessageMapper.insert(message);
-        return FriendDtos.ChatMessageDto.from(message, userId);
+        FriendDtos.ChatMessageDto dto = FriendDtos.ChatMessageDto.from(message, userId);
+        realtimeEventService.sendAfterCommit(friendId, "chat", dto);
+        return dto;
     }
 
     public long unreadTotal(long userId) {
@@ -213,18 +318,17 @@ public class FriendService {
 
     /* ---------------------------------------------------------------- 内部工具 */
 
-    private boolean isFriend(long userId, long otherId) {
+    public boolean isFriend(long userId, long otherId) {
         return friendMapper.selectCount(Wrappers.lambdaQuery(Friend.class)
                 .eq(Friend::getUserId, userId)
                 .eq(Friend::getFriendId, otherId)) > 0;
     }
 
-    private boolean hasPendingRequest(long recipientId, long requesterId) {
-        return messageMapper.selectCount(Wrappers.lambdaQuery(UserMessage.class)
-                .eq(UserMessage::getUserId, recipientId)
-                .eq(UserMessage::getRefUserId, requesterId)
-                .eq(UserMessage::getType, MessageService.TYPE_FRIEND_REQUEST)
-                .eq(UserMessage::getRequestStatus, REQUEST_PENDING)) > 0;
+    private boolean hasPendingRequest(long fromUserId, long toUserId) {
+        return requestMapper.selectCount(Wrappers.lambdaQuery(FriendRequest.class)
+                .eq(FriendRequest::getFromUserId, fromUserId)
+                .eq(FriendRequest::getToUserId, toUserId)
+                .eq(FriendRequest::getStatus, REQUEST_PENDING)) > 0;
     }
 
     private void insertFriendBothWays(long a, long b) {
@@ -245,6 +349,18 @@ public class FriendService {
         return friendMapper.selectList(Wrappers.lambdaQuery(Friend.class)
                         .eq(Friend::getUserId, userId))
                 .stream().map(Friend::getFriendId).collect(Collectors.toSet());
+    }
+
+    private Map<Long, AppUser> usersOf(List<Long> userIds) {
+        Map<Long, AppUser> users = new LinkedHashMap<>();
+        List<Long> distinct = userIds.stream().filter(Objects::nonNull).distinct().toList();
+        if (distinct.isEmpty()) {
+            return users;
+        }
+        for (AppUser user : userMapper.selectBatchIds(distinct)) {
+            users.put(user.getId(), user);
+        }
+        return users;
     }
 
     /** 会话两个方向的消息：AND 优先级高于 OR，正好拼成 (我发TA) OR (TA发我) */
@@ -281,5 +397,16 @@ public class FriendService {
             throw ApiException.unauthorized("账号不可用");
         }
         return user;
+    }
+
+    private static String preview(String content) {
+        String value = content == null ? "" : content.trim();
+        if (value.startsWith("[[smoji:")) {
+            return "[表情]";
+        }
+        if (value.startsWith("[[memo-share:")) {
+            return "[分享的笔记]";
+        }
+        return value.length() > 80 ? value.substring(0, 80) + "…" : value;
     }
 }

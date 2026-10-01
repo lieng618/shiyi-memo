@@ -217,6 +217,21 @@ public class FileService {
         return asset;
     }
 
+    /** 公开分享页展示作者头像；头像被屏蔽或文件失效时退回默认头像。 */
+    public FileAsset publicAvatar(AppUser user) {
+        if (user == null || user.getAvatarFileId() == null) {
+            return null;
+        }
+        FileAsset asset = fileMapper.selectById(user.getAvatarFileId());
+        if (asset == null
+                || !user.getId().equals(asset.getUserId())
+                || !"image".equals(asset.getKind())
+                || Boolean.TRUE.equals(asset.getBlocked())) {
+            return null;
+        }
+        return asset;
+    }
+
     /** 后台用：不看归属，也不管是否被屏蔽 */
     public FileAsset getAny(long fileId) {
         FileAsset asset = fileMapper.selectById(fileId);

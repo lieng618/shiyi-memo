@@ -67,7 +67,6 @@ async function confirm() {
       <el-input
         ref="inputRef"
         v-model="input"
-        placeholder="http://…/share/xxxxxxxx，或直接粘贴令牌"
         clearable
         @keyup.enter="confirm"
       />

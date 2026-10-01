@@ -1,13 +1,14 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { EditPen, Lock, Plus, Reading } from '@element-plus/icons-vue'
+import { ChatDotRound, EditPen, Lock, Reading } from '@element-plus/icons-vue'
 import { friendApi, shareApi } from '@/api'
 import type { PublicMemoDetail } from '@/types'
 import { useAuthStore } from '@/stores/auth'
 import { formatFull } from '@/utils/format'
 import MarkdownView from '@/components/MarkdownView.vue'
+import UserAvatar from '@/components/UserAvatar.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -16,23 +17,33 @@ const auth = useAuthStore()
 const detail = ref<PublicMemoDetail | null>(null)
 const loading = ref(true)
 const errorMessage = ref('')
-const requested = ref(false)
+const ownerActionsOpen = ref(false)
+const ownerAvatarFailed = ref(false)
+const ownerMenuRef = ref<HTMLElement | null>(null)
 
 const token = computed(() => String(route.params.token ?? ''))
 const isOwner = computed(() => auth.user?.id === detail.value?.ownerId)
+const owner = computed(() => ({
+  nickname: detail.value?.ownerName,
+  avatarUrl: ownerAvatarFailed.value ? null : detail.value?.ownerAvatarUrl,
+}))
 
 onMounted(() => {
   if (!auth.initialized) {
     void auth.fetchMe()
   }
   void load()
+  document.addEventListener('pointerdown', onDocumentPointerDown)
 })
+onBeforeUnmount(() => document.removeEventListener('pointerdown', onDocumentPointerDown))
 watch(token, () => void load())
 
 async function load() {
   loading.value = true
   errorMessage.value = ''
   detail.value = null
+  ownerActionsOpen.value = false
+  ownerAvatarFailed.value = false
   try {
     detail.value = await shareApi.get(token.value)
   } catch (error) {
@@ -54,15 +65,37 @@ function goApp() {
   void router.push('/notes')
 }
 
+function toggleOwnerActions() {
+  if (isOwner.value) return
+  if (!auth.isLoggedIn) {
+    goLogin()
+    return
+  }
+  ownerActionsOpen.value = !ownerActionsOpen.value
+}
+
+function onDocumentPointerDown(event: PointerEvent) {
+  if (!ownerActionsOpen.value || !ownerMenuRef.value) return
+  if (!ownerMenuRef.value.contains(event.target as Node)) {
+    ownerActionsOpen.value = false
+  }
+}
+
 async function addFriend() {
-  if (!detail.value?.ownerId || requested.value) return
+  if (!detail.value?.ownerId) return
   try {
     await friendApi.sendRequest(detail.value.ownerId)
-    requested.value = true
+    ownerActionsOpen.value = false
     ElMessage.success(`已向 ${detail.value.ownerName} 发送好友申请`)
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '发送失败')
   }
+}
+
+function openChat() {
+  if (!detail.value?.ownerId) return
+  ownerActionsOpen.value = false
+  void router.push(`/friends/${detail.value.ownerId}`)
 }
 </script>
 
@@ -98,20 +131,46 @@ async function addFriend() {
       <article v-else-if="detail" class="share-content">
         <header class="article-header">
           <h1>{{ detail.title || '无标题' }}</h1>
-          <p class="article-meta tnum">
-            由 {{ detail.ownerName }} 分享 · 更新于 {{ formatFull(detail.updatedAt) }}
-            <!-- 登录且不是作者时可以在用户名这里发好友申请 -->
-            <button
-              v-if="auth.isLoggedIn && !isOwner"
-              type="button"
-              class="add-friend-btn"
-              :disabled="requested"
-              @click="addFriend"
+          <div class="article-meta tnum">
+            <div
+              ref="ownerMenuRef"
+              class="owner-menu-wrap"
+              @keydown.esc="ownerActionsOpen = false"
             >
-              <el-icon :size="13"><Plus /></el-icon>
-              <span>{{ requested ? '已申请' : '加好友' }}</span>
-            </button>
-          </p>
+              <button
+                type="button"
+                class="owner-trigger"
+                aria-haspopup="menu"
+                :aria-expanded="ownerActionsOpen"
+                :aria-label="`查看 ${detail.ownerName} 的操作`"
+                @click="toggleOwnerActions"
+              >
+                <UserAvatar :user="owner" :size="30" @error="ownerAvatarFailed = true" />
+                <span class="owner-name">{{ detail.ownerName }}</span>
+              </button>
+
+              <Transition name="owner-menu">
+                <div
+                  v-if="ownerActionsOpen && auth.isLoggedIn && !isOwner"
+                  class="owner-menu"
+                  role="menu"
+                >
+                  <button
+                    type="button"
+                    class="owner-menu-item"
+                    role="menuitem"
+                    @click="detail.friend ? openChat() : addFriend()"
+                  >
+                    <el-icon v-if="detail.friend" :size="15">
+                      <ChatDotRound />
+                    </el-icon>
+                    <span>{{ detail.friend ? '私信' : '加好友' }}</span>
+                  </button>
+                </div>
+              </Transition>
+            </div>
+            <span class="meta-copy">分享 · 更新于 {{ formatFull(detail.updatedAt) }}</span>
+          </div>
         </header>
         <MarkdownView :content="detail.contentMd" :public-token="token" />
       </article>
@@ -213,39 +272,102 @@ async function addFriend() {
 }
 
 .article-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
   margin: var(--space-4) 0 0;
   color: var(--text-3);
   font-size: 13px;
 }
 
-/* 用户名旁边的加好友小按钮 */
-.add-friend-btn {
+.owner-menu-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.owner-trigger {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
-  margin-left: var(--space-2);
-  padding: 2px 10px;
-  border: 1px solid var(--border-strong);
+  gap: 8px;
+  min-height: 34px;
+  padding: 1px 7px 1px 1px;
+  border: 1px solid transparent;
   border-radius: 999px;
+  background: transparent;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background var(--dur) var(--ease-out), border-color var(--dur) var(--ease-out);
+}
+
+.owner-trigger:hover,
+.owner-trigger:focus-visible {
+  border-color: var(--border);
+  background: var(--panel-2);
+}
+
+.owner-name {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 650;
+}
+
+.meta-copy {
+  white-space: nowrap;
+}
+
+/* 点头像后浮出的操作菜单 */
+.owner-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 30;
+  width: 148px;
+  padding: 5px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: 0 10px 28px rgb(0 0 0 / 14%);
+}
+
+.owner-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 34px;
+  padding: 0 9px;
+  border: none;
+  border-radius: 6px;
   background: transparent;
   color: var(--text-2);
   font-family: inherit;
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 600;
-  vertical-align: middle;
+  text-align: left;
   cursor: pointer;
-  transition: background var(--dur) var(--ease-out), border-color var(--dur) var(--ease-out), color var(--dur) var(--ease-out);
+  transition: background var(--dur) var(--ease-out), color var(--dur) var(--ease-out);
 }
 
-.add-friend-btn:hover:not(:disabled) {
-  border-color: var(--brand-fill);
+.owner-menu-item:hover,
+.owner-menu-item:focus-visible {
   background: var(--brand-soft);
   color: var(--brand-hover);
 }
 
-.add-friend-btn:disabled {
-  opacity: 0.6;
-  cursor: default;
+.owner-menu-enter-active,
+.owner-menu-leave-active {
+  transition: opacity var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out);
+}
+
+.owner-menu-enter-from,
+.owner-menu-leave-to {
+  opacity: 0;
+  transform: translateY(-4px) scale(0.98);
 }
 
 .share-state {

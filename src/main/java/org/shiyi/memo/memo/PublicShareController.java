@@ -39,6 +39,19 @@ public class PublicShareController {
         return memoService.publicDetail(token);
     }
 
+    @GetMapping("/{token}/owner-avatar")
+    public ResponseEntity<Resource> ownerAvatar(@PathVariable String token) {
+        FileAsset asset = memoService.publicOwnerAvatar(token);
+        Path thumbnail = fileService.thumbnailOf(asset, 160);
+        if (thumbnail == null) {
+            return resourceResponse(asset, fileService.pathOf(asset), true);
+        }
+        return ResponseEntity.ok()
+                .contentType(MediaType.IMAGE_JPEG)
+                .cacheControl(CacheControl.noStore())
+                .body(new FileSystemResource(thumbnail));
+    }
+
     @GetMapping("/{token}/files/{fileId}/raw")
     public ResponseEntity<Resource> raw(@PathVariable String token, @PathVariable long fileId) {
         FileAsset asset = publicAsset(token, fileId);

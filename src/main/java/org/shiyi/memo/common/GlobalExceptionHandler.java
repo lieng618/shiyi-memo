@@ -1,6 +1,7 @@
 package org.shiyi.memo.common;
 
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -10,6 +11,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.io.IOException;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -39,6 +41,20 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(ResponseStatusException.class)
     public ResponseEntity<Map<String, Object>> handleResponseStatus(ResponseStatusException ex) {
         return build(ex.getStatusCode().value(), ex.getReason());
+    }
+
+    /** SSE 客户端刷新或关闭时写入旧连接会抛 IOException，这不是业务错误。 */
+    @ExceptionHandler(IOException.class)
+    public void handleIo(IOException ex, HttpServletRequest request, HttpServletResponse response)
+            throws IOException {
+        if (request.getRequestURI().startsWith("/api/events/stream")) {
+            log.debug("SSE 连接已断开：{}", ex.getMessage());
+            return;
+        }
+        log.error("IO 异常 {} {}", request.getMethod(), request.getRequestURI(), ex);
+        if (!response.isCommitted()) {
+            response.sendError(500, "服务器内部错误");
+        }
     }
 
     @ExceptionHandler(Exception.class)

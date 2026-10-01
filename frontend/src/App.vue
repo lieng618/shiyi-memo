@@ -1,15 +1,23 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { onBeforeUnmount, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import zhCn from 'element-plus/es/locale/lang/zh-cn'
 import { onUnauthorized } from '@/api/http'
+import { onRealtime, startRealtime, stopRealtime } from '@/composables/useRealtime'
+import { useFriendSummary } from '@/composables/useFriendSummary'
 import { useAuthStore } from '@/stores/auth'
 
 const router = useRouter()
 const auth = useAuthStore()
+const { refresh: refreshFriendSummary } = useFriendSummary()
+
+let offChat: (() => void) | undefined
+let offFriends: (() => void) | undefined
 
 onMounted(() => {
+  offChat = onRealtime('chat', () => void refreshFriendSummary())
+  offFriends = onRealtime('friends', () => void refreshFriendSummary())
   onUnauthorized.handler = () => {
     if (auth.isLoggedIn) {
       ElMessage.warning('登录已过期，请重新登录')
@@ -17,6 +25,21 @@ onMounted(() => {
     auth.clear()
     void router.replace({ name: 'login' })
   }
+})
+
+watch(() => auth.isLoggedIn, (loggedIn) => {
+  if (loggedIn) {
+    startRealtime()
+    void refreshFriendSummary()
+  } else {
+    stopRealtime()
+  }
+}, { immediate: true })
+
+onBeforeUnmount(() => {
+  offChat?.()
+  offFriends?.()
+  stopRealtime()
 })
 </script>
 

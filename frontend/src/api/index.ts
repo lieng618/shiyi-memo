@@ -5,6 +5,9 @@ import type {
   FileAsset,
   FileKind,
   Friend,
+  FriendNotification,
+  FriendRequestList,
+  FriendSummary,
   LoginResponse,
   MemoDetail,
   MemoSummary,
@@ -140,7 +143,7 @@ export const messageApi = {
     http.post<{ count: number }>('/messages/read', { ids: ids ?? null }).then((r) => r.data.count),
 }
 
-/** 好友：申请走站内信，同意后才能聊天 */
+/** 好友：申请和处理都在好友页完成，同意后才能聊天 */
 export const friendApi = {
   list: () => http.get<Friend[]>('/friends').then((r) => r.data),
   remove: (userId: number) => http.delete(`/friends/${userId}`).then(() => undefined),
@@ -148,8 +151,17 @@ export const friendApi = {
     http.get<UserSearchResult[]>('/friends/search', { params: { keyword } }).then((r) => r.data),
   sendRequest: (toUserId: number) =>
     http.post('/friends/requests', { toUserId }).then(() => undefined),
-  accept: (messageId: number) => http.post(`/friends/requests/${messageId}/accept`).then(() => undefined),
-  reject: (messageId: number) => http.post(`/friends/requests/${messageId}/reject`).then(() => undefined),
+  requests: () => http.get<FriendRequestList>('/friends/requests').then((r) => r.data),
+  requestCount: () =>
+    http.get<{ count: number }>('/friends/requests/count').then((r) => r.data.count),
+  summary: () => http.get<FriendSummary>('/friends/summary').then((r) => r.data),
+  notifications: () => http.get<FriendNotification[]>('/friends/notifications').then((r) => r.data),
+  accept: (requestId: number) =>
+    http.post(`/friends/requests/${requestId}/accept`).then(() => undefined),
+  reject: (requestId: number) =>
+    http.post(`/friends/requests/${requestId}/reject`).then(() => undefined),
+  cancelRequest: (requestId: number) =>
+    http.delete(`/friends/requests/${requestId}`).then(() => undefined),
   chat: (userId: number, params: { afterId?: number; limit?: number } = {}) =>
     http.get<ChatMessage[]>(`/friends/${userId}/chat`, { params }).then((r) => r.data),
   sendChat: (userId: number, content: string) =>

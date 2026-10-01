@@ -21,7 +21,6 @@ public class MessageService {
     public static final String TYPE_NOTICE = "NOTICE";
     public static final String TYPE_FILE_BLOCKED = "FILE_BLOCKED";
     public static final String TYPE_MEMO_REMOVED = "MEMO_REMOVED";
-    public static final String TYPE_FRIEND_REQUEST = "FRIEND_REQUEST";
 
     private final UserMessageMapper messageMapper;
 
@@ -29,6 +28,7 @@ public class MessageService {
         IPage<UserMessage> result = messageMapper.selectPage(new Page<>(page, size),
                 Wrappers.lambdaQuery(UserMessage.class)
                         .eq(UserMessage::getUserId, userId)
+                        .ne(UserMessage::getType, "FRIEND_REQUEST")
                         .orderByDesc(UserMessage::getId));
         return PageResult.of(result.getRecords().stream().map(MessageDtos.MessageDto::from).toList(),
                 result.getTotal(), page, size);

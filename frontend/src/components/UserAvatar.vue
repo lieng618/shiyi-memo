@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 /** 结构类型：备忘录用户和后台用户都能用 */
 interface AvatarUser {
@@ -9,22 +9,33 @@ interface AvatarUser {
 }
 
 const props = withDefaults(defineProps<{ user?: AvatarUser | null; size?: number }>(), { size: 36 })
+const imageFailed = ref(false)
 
 const initial = computed(() => {
   const name = props.user?.nickname?.trim() || props.user?.email?.trim() || '拾'
   return name.slice(0, 1).toUpperCase()
 })
+
+const avatarSrc = computed(() => {
+  const url = props.user?.avatarUrl
+  return url && !imageFailed.value ? url : undefined
+})
+
+watch(() => props.user?.avatarUrl, () => {
+  imageFailed.value = false
+})
 </script>
 
 <template>
   <img
-    v-if="user?.avatarUrl"
+    v-if="avatarSrc"
     class="avatar"
-    :src="user.avatarUrl"
-    :alt="`${user.nickname} 的头像`"
+    :src="avatarSrc"
+    :alt="`${user?.nickname ?? ''} 的头像`"
     :width="size"
     :height="size"
     :style="{ width: `${size}px`, height: `${size}px` }"
+    @error="imageFailed = true"
   />
   <!-- 没有头像时用昵称首字兜底，纯装饰，旁边就是昵称 -->
   <span

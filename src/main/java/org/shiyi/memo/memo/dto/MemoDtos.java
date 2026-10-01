@@ -40,6 +40,7 @@ public final class MemoDtos {
     }
 
     public record PublicMemoDetail(Long id, String title, String contentMd, Long ownerId,
-                                   String ownerName, LocalDateTime updatedAt) {
+                                   String ownerName, String ownerAvatarUrl, boolean friend,
+                                   LocalDateTime updatedAt) {
     }
 }

@@ -1,5 +1,6 @@
 package org.shiyi.memo.security;
 
+import jakarta.servlet.DispatcherType;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.shiyi.memo.common.ApiException;
@@ -12,6 +13,10 @@ public class AuthInterceptor implements HandlerInterceptor {
 
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {
+        // SSE 等异步请求完成时会再次进入派发阶段，此时初始请求已经鉴权过了。
+        if (request.getDispatcherType() == DispatcherType.ASYNC) {
+            return true;
+        }
         if (!(handler instanceof HandlerMethod handlerMethod)) {
             return true;
         }

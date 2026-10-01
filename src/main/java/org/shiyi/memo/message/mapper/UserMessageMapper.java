@@ -12,18 +12,21 @@ import java.util.List;
 
 public interface UserMessageMapper extends BaseMapper<UserMessage> {
 
-    @Select("SELECT COUNT(*) FROM user_message WHERE user_id = #{userId} AND read_at IS NULL")
+    @Select("SELECT COUNT(*) FROM user_message "
+            + "WHERE user_id = #{userId} AND read_at IS NULL AND type != 'FRIEND_REQUEST'")
     long countUnread(@Param("userId") long userId);
 
     /** ids 为空表示全部已读 */
     @Update("<script>UPDATE user_message SET read_at = NOW() "
             + "WHERE user_id = #{userId} AND read_at IS NULL "
+            + "AND type != 'FRIEND_REQUEST' "
             + "<if test='ids != null and ids.size() > 0'>AND id IN "
             + "<foreach collection='ids' item='id' open='(' separator=',' close=')'>#{id}</foreach></if>"
             + "</script>")
     int markRead(@Param("userId") long userId, @Param("ids") Collection<Long> ids);
 
-    @Select("<script>SELECT user_id AS userId, COUNT(*) AS cnt FROM user_message WHERE user_id IN "
+    @Select("<script>SELECT user_id AS userId, COUNT(*) AS cnt FROM user_message "
+            + "WHERE type != 'FRIEND_REQUEST' AND user_id IN "
             + "<foreach collection='userIds' item='id' open='(' separator=',' close=')'>#{id}</foreach> "
             + "GROUP BY user_id</script>")
     List<Map<String, Object>> countByUserIds(@Param("userIds") Collection<Long> userIds);
