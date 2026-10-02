@@ -56,3 +56,8 @@ src/main/resources/static/
 ### 部署 ###
 # mvn package 的可执行 jar、pm2 日志和线上配置（application-local.yml）都放在这里
 start/
+
+### 本地文案清单 ###
+# 只在本机看，不进仓库
+文案清单.md
+tools/extract-copy.mjs
