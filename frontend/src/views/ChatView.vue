@@ -2,7 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ChatDotRound, DocumentCopy } from '@element-plus/icons-vue'
+import { ChatDotRound, DocumentCopy, MoreFilled } from '@element-plus/icons-vue'
 import { friendApi, memoApi } from '@/api'
 import type { ChatMessage, Friend, MemoSummary } from '@/types'
 import { useFriendSummary } from '@/composables/useFriendSummary'
@@ -35,6 +35,20 @@ const draft = ref('')
 const emojiOpen = ref(false)
 const memoShareOpen = ref(false)
 const listRef = ref<HTMLElement | null>(null)
+
+const searchOpen = ref(false)
+const searchType = ref<'text' | 'memo'>('text')
+const searchKeyword = ref('')
+const searchResults = ref<ChatMessage[]>([])
+const searching = ref(false)
+const searchDone = ref(false)
+const highlightId = ref<number | null>(null)
+const searchTitle = computed(() => (searchType.value === 'memo' ? '查找笔记分享' : '查找聊天内容'))
+const searchView = computed(() => searchResults.value.map((message) => ({
+  message,
+  memo: resolveMemoShare(message.content),
+})))
+
 const messageView = computed(() => messages.value.map((message) => ({
   message,
   emoji: resolveSmoji(message.content),
@@ -42,6 +56,7 @@ const messageView = computed(() => messages.value.map((message) => ({
 })))
 
 let pollTimer: ReturnType<typeof setInterval> | undefined
+let highlightTimer: ReturnType<typeof setTimeout> | undefined
 let polling = false
 let offChat: (() => void) | undefined
 /** 已加载的最大消息 id，轮询只取比它新的 */
@@ -70,6 +85,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   clearInterval(pollTimer)
+  clearTimeout(highlightTimer)
   document.removeEventListener('visibilitychange', onVisibilityChange)
   offChat?.()
 })
@@ -174,6 +190,122 @@ function openMemoShare(token: string) {
   void router.push(`/share/${token}`)
 }
 
+/* ---------------------------------------------------------------- 右上角菜单 */
+
+function onMenuCommand(command: string | number | object) {
+  const action = String(command)
+  if (action === 'clear') {
+    void clearChat()
+    return
+  }
+  if (action === 'remove') {
+    void removeFriend()
+    return
+  }
+  openSearch(action === 'search-memo' ? 'memo' : 'text')
+}
+
+function openSearch(type: 'text' | 'memo') {
+  searchType.value = type
+  searchKeyword.value = ''
+  searchResults.value = []
+  searchDone.value = false
+  searchOpen.value = true
+  if (type === 'memo') {
+    // 分享的笔记本来就不多，打开直接列出来，不用再输关键词
+    void runSearch()
+  }
+}
+
+async function runSearch() {
+  const keyword = searchKeyword.value.trim()
+  if (searchType.value === 'text' && !keyword) {
+    ElMessage.warning('输入关键词再搜索')
+    return
+  }
+  searching.value = true
+  try {
+    searchResults.value = await friendApi.searchChat(friendId.value, {
+      type: searchType.value,
+      keyword: searchType.value === 'text' ? keyword : undefined,
+    })
+    searchDone.value = true
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '搜索失败')
+  } finally {
+    searching.value = false
+  }
+}
+
+function openMemoFromSearch(message: ChatMessage) {
+  const info = resolveMemoShare(message.content)
+  if (!info) {
+    return
+  }
+  searchOpen.value = false
+  openMemoShare(info.token)
+}
+
+/** 搜索命中时就地跳过去；没加载到的老消息只提示一下 */
+async function jumpToMessage(message: ChatMessage) {
+  if (!messages.value.some((item) => item.id === message.id)) {
+    ElMessage.info('这条消息不在最近加载的记录里')
+    return
+  }
+  searchOpen.value = false
+  await nextTick()
+  const node = document.getElementById(`chat-msg-${message.id}`)
+  if (!node) {
+    return
+  }
+  node.scrollIntoView({ block: 'center', behavior: 'smooth' })
+  highlightId.value = message.id
+  clearTimeout(highlightTimer)
+  highlightTimer = setTimeout(() => {
+    highlightId.value = null
+  }, 1600)
+}
+
+async function clearChat() {
+  try {
+    await ElMessageBox.confirm('清空后你自己的聊天记录会全部删除，对方那边不受影响。', '清空聊天记录', {
+      confirmButtonText: '清空',
+      cancelButtonText: '取消',
+      type: 'warning',
+    })
+  } catch {
+    return
+  }
+  try {
+    await friendApi.clearChat(friendId.value)
+    messages.value = []
+    ElMessage.success('已清空聊天记录')
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '清空失败')
+  }
+}
+
+async function removeFriend() {
+  const nickname = friend.value?.nickname ?? '对方'
+  try {
+    await ElMessageBox.confirm(`删除好友「${nickname}」后，聊天记录会在对方那边保留。`, '删除好友', {
+      confirmButtonText: '删除',
+      cancelButtonText: '取消',
+      type: 'warning',
+    })
+  } catch {
+    return
+  }
+  try {
+    await friendApi.remove(friendId.value)
+    ElMessage.success('已删除好友')
+    await refreshFriendSummary()
+    await router.push('/friends')
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '删除失败')
+  }
+}
+
 async function sendContent(content: string) {
   if (!content || sending.value) return
   sending.value = true
@@ -192,7 +324,23 @@ async function sendContent(content: string) {
 
 <template>
   <div class="chat-page">
-    <PageHeader :title="friend?.nickname ?? '聊天'" back-to="/friends" back-label="返回好友列表" />
+    <PageHeader :title="friend?.nickname ?? '聊天'" back-to="/friends" back-label="返回好友列表">
+      <template #actions>
+        <el-dropdown v-if="!loading && !notFriend" trigger="click" placement="bottom-end" @command="onMenuCommand">
+          <button type="button" class="chat-menu-trigger" title="更多" aria-label="聊天设置">
+            <el-icon :size="18"><MoreFilled /></el-icon>
+          </button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item command="search-text">查找聊天内容</el-dropdown-item>
+              <el-dropdown-item command="search-memo">查找笔记分享</el-dropdown-item>
+              <el-dropdown-item command="clear" divided>清空聊天记录</el-dropdown-item>
+              <el-dropdown-item command="remove" divided>删除好友</el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
+      </template>
+    </PageHeader>
 
     <div class="chat-body">
       <div v-if="loading" class="chat-state">
@@ -211,8 +359,9 @@ async function sendContent(content: string) {
             <div
               v-for="entry in messageView"
               :key="entry.message.id"
+              :id="`chat-msg-${entry.message.id}`"
               class="chat-row"
-              :class="{ mine: entry.message.mine }"
+              :class="{ mine: entry.message.mine, 'chat-row--hit': highlightId === entry.message.id }"
             >
               <UserAvatar
                 v-if="friend && !entry.message.mine"
@@ -292,6 +441,66 @@ async function sendContent(content: string) {
         </footer>
       </template>
     </div>
+
+    <el-dialog
+      v-model="searchOpen"
+      :title="searchTitle"
+      width="min(520px, 92vw)"
+      append-to-body
+    >
+      <div class="chat-search">
+        <el-input
+          v-if="searchType === 'text'"
+          v-model="searchKeyword"
+          placeholder="输入关键词，回车搜索"
+          maxlength="50"
+          clearable
+          @keyup.enter="runSearch"
+        >
+          <template #append>
+            <el-button :loading="searching" @click="runSearch">搜索</el-button>
+          </template>
+        </el-input>
+
+        <div v-if="searching" class="chat-search-state">
+          <el-skeleton :rows="3" animated />
+        </div>
+        <p v-else-if="!searchDone" class="muted chat-search-state">输入关键词后回车搜索。</p>
+        <p v-else-if="!searchResults.length" class="muted chat-search-state">
+          {{ searchType === 'memo' ? '还没有分享过笔记。' : '没有找到相关的聊天内容。' }}
+        </p>
+
+        <ul v-else class="chat-search-list">
+          <li v-for="entry in searchView" :key="entry.message.id">
+            <button
+              v-if="entry.memo"
+              type="button"
+              class="chat-search-memo"
+              @click="openMemoFromSearch(entry.message)"
+            >
+              <span class="memo-card-icon"><el-icon :size="16"><DocumentCopy /></el-icon></span>
+              <span class="chat-search-copy">
+                <strong>{{ entry.memo?.title || '无标题' }}</strong>
+                <small>{{ entry.memo?.excerpt || '点击查看笔记' }}</small>
+              </span>
+              <span class="muted chat-search-time">{{ formatFull(entry.message.createdAt) }}</span>
+            </button>
+            <button
+              v-else
+              type="button"
+              class="chat-search-text"
+              @click="jumpToMessage(entry.message)"
+            >
+              <span class="chat-search-meta">
+                <span class="chat-search-sender">{{ entry.message.mine ? '我' : friend?.nickname }}</span>
+                <span class="muted chat-search-time">{{ formatFull(entry.message.createdAt) }}</span>
+              </span>
+              <span class="chat-search-body">{{ entry.message.content }}</span>
+            </button>
+          </li>
+        </ul>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
@@ -518,6 +727,140 @@ async function sendContent(content: string) {
   font-size: 21px;
   font-weight: 700;
   line-height: 1;
+}
+
+.chat-menu-trigger {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+  transition: background var(--dur) var(--ease-out), color var(--dur) var(--ease-out);
+}
+
+.chat-menu-trigger:hover,
+.chat-menu-trigger:focus-visible {
+  background: var(--panel-hover);
+  color: var(--text);
+}
+
+/* 从搜索结果跳过来时闪一下，方便定位 */
+.chat-row--hit .chat-bubble,
+.chat-row--hit .chat-memo-card {
+  border-color: var(--brand-fill);
+  box-shadow: 0 0 0 3px var(--brand-soft);
+}
+
+.chat-search {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.chat-search-state {
+  margin: 0;
+  padding: var(--space-3) 0;
+  text-align: center;
+  font-size: 13px;
+}
+
+.chat-search-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: min(52vh, 460px);
+  overflow-y: auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chat-search-text,
+.chat-search-memo {
+  display: flex;
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel);
+  color: var(--text);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--dur) var(--ease-out), background var(--dur) var(--ease-out);
+}
+
+.chat-search-text {
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+}
+
+.chat-search-memo {
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+}
+
+.chat-search-text:hover,
+.chat-search-text:focus-visible,
+.chat-search-memo:hover,
+.chat-search-memo:focus-visible {
+  border-color: var(--brand-fill);
+  background: var(--brand-soft);
+}
+
+.chat-search-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+}
+
+.chat-search-sender {
+  color: var(--text-2);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.chat-search-time {
+  flex: 0 0 auto;
+  margin-left: auto;
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
+.chat-search-body {
+  font-size: 13.5px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.chat-search-copy {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.chat-search-copy strong,
+.chat-search-copy small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-search-copy strong {
+  font-size: 13.5px;
+}
+
+.chat-search-copy small {
+  color: var(--text-3);
+  font-size: 12px;
 }
 
 @media (max-width: 640px) {

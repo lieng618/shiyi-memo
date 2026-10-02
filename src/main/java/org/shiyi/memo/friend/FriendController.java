@@ -87,6 +87,20 @@ public class FriendController {
         return friendService.chat(AuthContext.requireUserId(), userId, afterId, limit);
     }
 
+    /** 查聊天内容：type = text 按关键词搜文字，type = memo 只看分享的笔记 */
+    @GetMapping("/{userId}/chat/search")
+    public List<FriendDtos.ChatMessageDto> searchChat(@PathVariable long userId,
+                                                      @RequestParam(required = false) String keyword,
+                                                      @RequestParam(defaultValue = "text") String type) {
+        return friendService.searchChat(AuthContext.requireUserId(), userId, keyword,
+                "memo".equalsIgnoreCase(type));
+    }
+
+    @DeleteMapping("/{userId}/chat")
+    public void clearChat(@PathVariable long userId) {
+        friendService.clearChat(AuthContext.requireUserId(), userId);
+    }
+
     @PostMapping("/{userId}/chat")
     public FriendDtos.ChatMessageDto sendChat(@PathVariable long userId,
                                               @Valid @RequestBody FriendDtos.SendChatRequest request) {

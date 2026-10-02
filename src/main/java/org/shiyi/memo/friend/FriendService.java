@@ -5,9 +5,11 @@ import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import lombok.RequiredArgsConstructor;
 import org.shiyi.memo.common.ApiException;
 import org.shiyi.memo.friend.dto.FriendDtos;
+import org.shiyi.memo.friend.entity.ChatClear;
 import org.shiyi.memo.friend.entity.ChatMessage;
 import org.shiyi.memo.friend.entity.Friend;
 import org.shiyi.memo.friend.entity.FriendRequest;
+import org.shiyi.memo.friend.mapper.ChatClearMapper;
 import org.shiyi.memo.friend.mapper.ChatMessageMapper;
 import org.shiyi.memo.friend.mapper.FriendMapper;
 import org.shiyi.memo.friend.mapper.FriendRequestMapper;
@@ -45,6 +47,7 @@ public class FriendService {
     private final FriendMapper friendMapper;
     private final FriendRequestMapper requestMapper;
     private final ChatMessageMapper chatMessageMapper;
+    private final ChatClearMapper chatClearMapper;
     private final AppUserMapper userMapper;
     private final RealtimeEventService realtimeEventService;
 
@@ -271,20 +274,23 @@ public class FriendService {
 
     /**
      * 拉取和某好友的会话。afterId = 0 时返回最近 limit 条（升序），否则只返回更新的消息；
-     * 每次拉取顺手把对方发来的标成已读。
+     * 每次拉取顺手把对方发来的标成已读。自己清空过的聊天记录不再返回。
      */
     public List<FriendDtos.ChatMessageDto> chat(long userId, long friendId, long afterId, int limit) {
         requireFriend(userId, friendId);
+        LocalDateTime cleared = clearedAt(userId, friendId);
         List<ChatMessage> rows;
         if (afterId > 0) {
             rows = chatMessageMapper.selectList(Wrappers.lambdaQuery(ChatMessage.class)
                     .gt(ChatMessage::getId, afterId)
                     .and(w -> conversationPair(userId, friendId, w))
+                    .gt(cleared != null, ChatMessage::getCreatedAt, cleared)
                     .orderByAsc(ChatMessage::getId)
                     .last("limit 200"));
         } else {
             rows = chatMessageMapper.selectList(Wrappers.lambdaQuery(ChatMessage.class)
                     .and(w -> conversationPair(userId, friendId, w))
+                    .gt(cleared != null, ChatMessage::getCreatedAt, cleared)
                     .orderByDesc(ChatMessage::getId)
                     .last("limit " + Math.max(1, Math.min(limit, 200))));
             Collections.reverse(rows);
@@ -292,6 +298,52 @@ public class FriendService {
         // 对方发来的都算已读（开着聊天页呢）
         markReadFrom(friendId, userId);
         return rows.stream().map(row -> FriendDtos.ChatMessageDto.from(row, userId)).toList();
+    }
+
+    /**
+     * 查聊天内容：memoOnly = true 时只看分享的笔记，否则按关键词搜纯文字消息
+     * （表情和笔记分享的原始内容是一串标记，按文字搜没有意义，直接排除）。
+     */
+    public List<FriendDtos.ChatMessageDto> searchChat(long userId, long friendId, String keyword, boolean memoOnly) {
+        requireFriend(userId, friendId);
+        String kw = keyword == null ? "" : keyword.trim();
+        if (!memoOnly && kw.isEmpty()) {
+            return List.of();
+        }
+        LocalDateTime cleared = clearedAt(userId, friendId);
+        return chatMessageMapper.selectList(Wrappers.lambdaQuery(ChatMessage.class)
+                        .and(w -> conversationPair(userId, friendId, w))
+                        .gt(cleared != null, ChatMessage::getCreatedAt, cleared)
+                        .likeRight(memoOnly, ChatMessage::getContent, MEMO_SHARE_PREFIX)
+                        .like(!memoOnly, ChatMessage::getContent, escapeLike(kw))
+                        .notLikeRight(!memoOnly, ChatMessage::getContent, SMOJI_PREFIX)
+                        .notLikeRight(!memoOnly, ChatMessage::getContent, MEMO_SHARE_PREFIX)
+                        .orderByDesc(ChatMessage::getId)
+                        .last("limit 50"))
+                .stream()
+                .map(row -> FriendDtos.ChatMessageDto.from(row, userId))
+                .toList();
+    }
+
+    /** 清空聊天记录：只影响自己这一侧，顺便把这边的未读一并清掉 */
+    @Transactional
+    public void clearChat(long userId, long friendId) {
+        requireFriend(userId, friendId);
+        LocalDateTime now = LocalDateTime.now();
+        ChatClear marker = chatClearMapper.selectOne(Wrappers.lambdaQuery(ChatClear.class)
+                .eq(ChatClear::getUserId, userId)
+                .eq(ChatClear::getFriendId, friendId));
+        if (marker == null) {
+            marker = new ChatClear();
+            marker.setUserId(userId);
+            marker.setFriendId(friendId);
+            marker.setClearedAt(now);
+            chatClearMapper.insert(marker);
+        } else {
+            marker.setClearedAt(now);
+            chatClearMapper.updateById(marker);
+        }
+        markReadFrom(friendId, userId);
     }
 
     @Transactional
@@ -317,6 +369,10 @@ public class FriendService {
     }
 
     /* ---------------------------------------------------------------- 内部工具 */
+
+    /** 聊天气泡里表情和笔记分享的原文标记，和前端约定一致 */
+    private static final String SMOJI_PREFIX = "[[smoji:";
+    private static final String MEMO_SHARE_PREFIX = "[[memo-share:";
 
     public boolean isFriend(long userId, long otherId) {
         return friendMapper.selectCount(Wrappers.lambdaQuery(Friend.class)
@@ -391,6 +447,14 @@ public class FriendService {
         }
     }
 
+    /** 自己对这个会话的清空时间点，没清空过就是 null */
+    private LocalDateTime clearedAt(long userId, long friendId) {
+        ChatClear marker = chatClearMapper.selectOne(Wrappers.lambdaQuery(ChatClear.class)
+                .eq(ChatClear::getUserId, userId)
+                .eq(ChatClear::getFriendId, friendId));
+        return marker == null ? null : marker.getClearedAt();
+    }
+
     private AppUser requireUser(long userId) {
         AppUser user = userMapper.selectById(userId);
         if (user == null || !user.isEnabled()) {
@@ -401,12 +465,17 @@ public class FriendService {
 
     private static String preview(String content) {
         String value = content == null ? "" : content.trim();
-        if (value.startsWith("[[smoji:")) {
+        if (value.startsWith(SMOJI_PREFIX)) {
             return "[表情]";
         }
-        if (value.startsWith("[[memo-share:")) {
+        if (value.startsWith(MEMO_SHARE_PREFIX)) {
             return "[分享的笔记]";
         }
         return value.length() > 80 ? value.substring(0, 80) + "…" : value;
+    }
+
+    /** 关键词里的 % 和 _ 是 like 的通配符，搜索时要当成普通字符 */
+    private static String escapeLike(String value) {
+        return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
     }
 }

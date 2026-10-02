@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { Search, User } from '@element-plus/icons-vue'
 import { friendApi } from '@/api'
 import type { Friend, FriendRequest, UserSearchResult } from '@/types'
@@ -161,24 +161,6 @@ async function openChat(friend: Friend) {
   await router.push(`/friends/${friend.userId}`)
 }
 
-async function removeFriend(friend: Friend) {
-  try {
-    await ElMessageBox.confirm(`删除好友「${friend.nickname}」后，聊天记录会在对方那边保留。`, '删除好友', {
-      confirmButtonText: '删除',
-      cancelButtonText: '取消',
-      type: 'warning',
-    })
-  } catch {
-    return
-  }
-  try {
-    await friendApi.remove(friend.userId)
-    friends.value = friends.value.filter((item) => item.userId !== friend.userId)
-    ElMessage.success('已删除好友')
-  } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '删除失败')
-  }
-}
 </script>
 
 <template>
@@ -235,7 +217,7 @@ async function removeFriend(friend: Friend) {
 
           <div v-else-if="!friends.length" class="panel-empty panel-empty--tall">
             <span class="empty-icon"><el-icon><User /></el-icon></span>
-            <p>还没有好友，去“添加好友”页签找一个人吧。</p>
+            <p>暂无好友</p>
           </div>
 
           <ul v-else class="friend-list">
@@ -249,7 +231,6 @@ async function removeFriend(friend: Friend) {
               </div>
               <div class="friend-actions">
                 <el-button type="primary" size="small" @click="openChat(friend)">发消息</el-button>
-                <el-button size="small" type="danger" plain @click="removeFriend(friend)">删除</el-button>
               </div>
             </li>
           </ul>

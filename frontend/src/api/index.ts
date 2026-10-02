@@ -164,6 +164,11 @@ export const friendApi = {
     http.delete(`/friends/requests/${requestId}`).then(() => undefined),
   chat: (userId: number, params: { afterId?: number; limit?: number } = {}) =>
     http.get<ChatMessage[]>(`/friends/${userId}/chat`, { params }).then((r) => r.data),
+  /** 查聊天内容：type = text 按关键词搜文字，type = memo 只看分享的笔记 */
+  searchChat: (userId: number, params: { keyword?: string; type?: 'text' | 'memo' }) =>
+    http.get<ChatMessage[]>(`/friends/${userId}/chat/search`, { params }).then((r) => r.data),
+  /** 清空聊天记录：只清自己这一侧 */
+  clearChat: (userId: number) => http.delete(`/friends/${userId}/chat`).then(() => undefined),
   sendChat: (userId: number, content: string) =>
     http.post<ChatMessage>(`/friends/${userId}/chat`, { content }).then((r) => r.data),
 }
