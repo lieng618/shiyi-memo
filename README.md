@@ -45,13 +45,13 @@ npm install
 npm run build
 cd ..
 mvn -DskipTests package
-java -jar target/shiyi-memo-1.0.0.jar
+java -jar start/shiyi-memo-1.0.0.jar
 ```
 
 也可以在项目根目录直接执行：
 
 ```powershell
-.\start.ps1
+.\start-windows.ps1
 ```
 
 访问地址：
@@ -67,6 +67,17 @@ java -jar target/shiyi-memo-1.0.0.jar
 
 - 后端：`http://localhost:8080`
 - 前端：`http://localhost:5173`
+
+## 部署
+
+`mvn package` 已经把可执行 jar 输出到 `start/`，`ecosystem.config.js` 的 pm2 应用目录也指向这里：
+
+```bash
+bash start-linux.sh       # Linux 服务器：前端构建 -> 后端打包 -> pm2 启动 / 重启
+.\start-windows.ps1       # Windows 本地：同样的三步，装了 pm2 就走 pm2，否则直接 java -jar
+```
+
+线上配置 `start/application-local.yml` 由 pm2 通过 `--spring.config.additional-location` 加载，和 jar 放在一起；日志在 `start/logs/`。
 
 ## 主要配置
 

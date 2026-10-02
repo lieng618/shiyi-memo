@@ -52,3 +52,7 @@ frontend/dist/
 frontend/.vite/
 # 前端构建产物会直接输出到后端静态目录
 src/main/resources/static/
+
+### 部署 ###
+# mvn package 的可执行 jar、pm2 日志和线上配置（application-local.yml）都放在这里
+start/

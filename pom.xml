@@ -105,6 +105,8 @@
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
                 <configuration>
+                    <!-- 可执行 jar 直接输出到 start/，和 pm2 的 APP_DIR 保持一致 -->
+                    <outputDirectory>${project.basedir}/start</outputDirectory>
                     <excludes>
                         <exclude>
                             <groupId>org.projectlombok</groupId>
