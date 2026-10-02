@@ -178,6 +178,7 @@ public class FriendService {
         List<ChatMessage> chatRows = chatMessageMapper.selectList(Wrappers.lambdaQuery(ChatMessage.class)
                 .eq(ChatMessage::getRecipientId, userId)
                 .isNull(ChatMessage::getReadAt)
+                .eq(ChatMessage::getDeliverable, true)
                 .orderByDesc(ChatMessage::getId)
                 .last("limit 100"));
         Map<Long, ChatMessage> latest = new LinkedHashMap<>();
@@ -349,16 +350,57 @@ public class FriendService {
 
     @Transactional
     public FriendDtos.ChatMessageDto sendChat(long userId, long friendId, String content) {
-        requireMutualFriend(userId, friendId);
+        // 自己这边删了对方就不能发；对方删了我还是能发，但这条只留给自己看
+        requireFriend(userId, friendId);
         AppUser me = requireUser(userId); // 顺带确认自己账号还是正常状态
+        boolean deliverable = isFriend(friendId, userId);
 
         ChatMessage message = new ChatMessage();
         message.setSenderId(userId);
         message.setRecipientId(friendId);
         message.setContent(content.trim());
+        message.setDeliverable(deliverable);
         message.setCreatedAt(LocalDateTime.now());
         chatMessageMapper.insert(message);
         FriendDtos.ChatMessageDto dto = FriendDtos.ChatMessageDto.from(message, userId);
+        if (deliverable) {
+            realtimeEventService.sendAfterCommit(friendId, "chat", dto);
+        }
+        return dto;
+    }
+
+    /**
+     * 重发没送出去的消息：关系恢复了就真正发一条出去，把那条失败记录换掉
+     * （对方是按 id 增量拉新消息的，沿用旧 id 会漏掉）；还是发不出去就报错，
+     * 让前端保持红叹号
+     */
+    @Transactional
+    public FriendDtos.ChatMessageDto resendChat(long userId, long friendId, long messageId) {
+        ChatMessage message = chatMessageMapper.selectById(messageId);
+        if (message == null || !Objects.equals(message.getSenderId(), userId)
+                || !Objects.equals(message.getRecipientId(), friendId)) {
+            throw ApiException.notFound("消息不存在");
+        }
+        requireFriend(userId, friendId);
+
+        if (Boolean.TRUE.equals(message.getDeliverable())) {
+            // 本来就发出去了，直接回原样，避免重复推给对面
+            return FriendDtos.ChatMessageDto.from(message, userId);
+        }
+        if (!isFriend(friendId, userId)) {
+            throw ApiException.forbidden("对方不是你的好友");
+        }
+
+        ChatMessage fresh = new ChatMessage();
+        fresh.setSenderId(userId);
+        fresh.setRecipientId(friendId);
+        fresh.setContent(message.getContent());
+        fresh.setDeliverable(true);
+        fresh.setCreatedAt(LocalDateTime.now());
+        chatMessageMapper.insert(fresh);
+        chatMessageMapper.deleteById(message.getId());
+
+        FriendDtos.ChatMessageDto dto = FriendDtos.ChatMessageDto.from(fresh, userId);
         realtimeEventService.sendAfterCommit(friendId, "chat", dto);
         return dto;
     }
@@ -366,6 +408,7 @@ public class FriendService {
     public long unreadTotal(long userId) {
         return chatMessageMapper.selectCount(Wrappers.lambdaQuery(ChatMessage.class)
                 .eq(ChatMessage::getRecipientId, userId)
+                .eq(ChatMessage::getDeliverable, true)
                 .isNull(ChatMessage::getReadAt));
     }
 
@@ -422,13 +465,16 @@ public class FriendService {
     private void conversationPair(long userId, long friendId, LambdaQueryWrapper<ChatMessage> w) {
         w.eq(ChatMessage::getSenderId, userId).eq(ChatMessage::getRecipientId, friendId)
                 .or()
-                .eq(ChatMessage::getSenderId, friendId).eq(ChatMessage::getRecipientId, userId);
+                .eq(ChatMessage::getSenderId, friendId).eq(ChatMessage::getRecipientId, userId)
+                // 我自己发出去的没送达消息要留着，对方发不进来的那种本来也查不到
+                .eq(ChatMessage::getDeliverable, true);
     }
 
     private long unreadFrom(long senderId, long recipientId) {
         return chatMessageMapper.selectCount(Wrappers.lambdaQuery(ChatMessage.class)
                 .eq(ChatMessage::getSenderId, senderId)
                 .eq(ChatMessage::getRecipientId, recipientId)
+                .eq(ChatMessage::getDeliverable, true)
                 .isNull(ChatMessage::getReadAt));
     }
 
@@ -443,17 +489,6 @@ public class FriendService {
     private void requireFriend(long userId, long otherId) {
         if (!isFriend(userId, otherId)) {
             throw ApiException.notFound("你们还不是好友");
-        }
-    }
-
-    /**
-     * 发消息要求双方都还在对方列表里：历史消息在单删后依然能看，
-     * 但发出去的新消息会被拦下（前端会显示成发送失败）。
-     */
-    private void requireMutualFriend(long userId, long otherId) {
-        requireFriend(userId, otherId);
-        if (!isFriend(otherId, userId)) {
-            throw ApiException.forbidden("对方已经把你从好友列表移除，消息发送失败");
         }
     }
 

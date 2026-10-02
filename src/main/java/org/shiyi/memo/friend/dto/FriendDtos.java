@@ -60,11 +60,13 @@ public final class FriendDtos {
                                         String content, long unread, LocalDateTime createdAt) {
     }
 
-    public record ChatMessageDto(long id, long senderId, boolean mine, String content, LocalDateTime createdAt) {
+    public record ChatMessageDto(long id, long senderId, boolean mine, String content, boolean failed,
+                                 LocalDateTime createdAt) {
 
         public static ChatMessageDto from(ChatMessage message, long viewerId) {
             return new ChatMessageDto(message.getId(), message.getSenderId(),
-                    message.getSenderId() == viewerId, message.getContent(), message.getCreatedAt());
+                    message.getSenderId() == viewerId, message.getContent(),
+                    !Boolean.TRUE.equals(message.getDeliverable()), message.getCreatedAt());
         }
     }
 

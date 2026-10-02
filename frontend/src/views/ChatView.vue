@@ -45,10 +45,10 @@ const searching = ref(false)
 const searchDone = ref(false)
 const highlightId = ref<number | null>(null)
 
-/** 发送失败的消息：id -> 失败原因 */
+/** 连服务器都没碰到的发送失败（比如断网）：id -> 原因 */
 const failed = ref<Record<number, string>>({})
 const retrying = ref(false)
-/** 对方把我删了（消息被拒收），给一个重新加好友的入口 */
+/** 对方不是我的好友了，给一个加好友的入口 */
 const peerRemoved = ref(false)
 const readding = ref(false)
 
@@ -280,7 +280,7 @@ async function jumpToMessage(message: ChatMessage) {
 
 async function clearChat() {
   try {
-    await ElMessageBox.confirm('清空后你自己的聊天记录会全部删除，对方那边不受影响。', '清空聊天记录', {
+    await ElMessageBox.confirm('是否清空本地聊天记录？', '清空聊天记录', {
       confirmButtonText: '清空',
       cancelButtonText: '取消',
       type: 'warning',
@@ -298,9 +298,8 @@ async function clearChat() {
 }
 
 async function removeFriend() {
-  const nickname = friend.value?.nickname ?? '对方'
   try {
-    await ElMessageBox.confirm(`删除好友「${nickname}」后，聊天记录会在对方那边保留。`, '删除好友', {
+    await ElMessageBox.confirm('是否删除好友？', '删除好友', {
       confirmButtonText: '删除',
       cancelButtonText: '取消',
       type: 'warning',
@@ -334,23 +333,23 @@ async function sendContent(content: string) {
     const message = await friendApi.sendChat(friendId.value, content)
     messages.value = messages.value.map((item) => (item.id === pendingId ? message : item))
     lastId = Math.max(lastId, message.id)
-    peerRemoved.value = false
+    // 没送达的消息后端也存着，这里跟着它的状态走
+    peerRemoved.value = Boolean(message.failed)
+    delete failed.value[pendingId]
   } catch (error) {
-    markFailed(pendingId, error)
+    failed.value[pendingId] = error instanceof Error ? error.message : '发送失败'
   } finally {
     sending.value = false
   }
 }
 
-/** 发送失败：留下气泡 + 红叹号，并记下原因 */
-function markFailed(messageId: number, error: unknown) {
-  const reason = error instanceof Error ? error.message : '发送失败'
-  failed.value[messageId] = reason
-  // 403 = 对方把我从列表里删了，这个会话已经发不出去
-  if (error instanceof ApiError && error.status === 403) {
-    peerRemoved.value = true
-  }
-  // 失败原因已经由 http 拦截器弹过提示了，这里只在气泡上留痕
+/** 没送出去的消息：要么是后端标了 failed，要么是这次请求根本没到服务器 */
+function isFailed(message: ChatMessage) {
+  return Boolean(message.failed) || message.id in failed.value
+}
+
+function failedText(message: ChatMessage) {
+  return failed.value[message.id] ?? '对方不是你的好友'
 }
 
 /** 点红叹号重发 */
@@ -358,13 +357,19 @@ async function retryMessage(message: ChatMessage) {
   if (retrying.value) return
   retrying.value = true
   try {
-    const saved = await friendApi.sendChat(friendId.value, message.content)
-    delete failed.value[message.id]
+    // 存到服务器上的失败消息走重发接口（后端会换一条已送达的回来）；没存上的就再发一次
+    const saved = message.id > 0
+      ? await friendApi.resendChat(friendId.value, message.id)
+      : await friendApi.sendChat(friendId.value, message.content)
     messages.value = messages.value.map((item) => (item.id === message.id ? saved : item))
     lastId = Math.max(lastId, saved.id)
-    peerRemoved.value = false
+    delete failed.value[message.id]
+    peerRemoved.value = Boolean(saved.failed)
   } catch (error) {
-    markFailed(message.id, error)
+    failed.value[message.id] = error instanceof Error ? error.message : '发送失败'
+    if (error instanceof ApiError && error.status === 403) {
+      peerRemoved.value = true
+    }
   } finally {
     retrying.value = false
   }
@@ -376,7 +381,7 @@ async function readd() {
   try {
     await friendApi.sendRequest(friendId.value)
     peerRemoved.value = false
-    ElMessage.success('已发送好友申请，等对方同意后就能继续聊天')
+    ElMessage.success('已发送好友申请')
   } catch {
     /* 拦截器已经弹过提示了 */
   } finally {
@@ -412,7 +417,7 @@ async function readd() {
 
       <div v-else-if="notFriend" class="chat-state empty">
         <span class="empty-icon"><el-icon><ChatDotRound /></el-icon></span>
-        <p>对方不是你的好友，去好友页重新加一下。</p>
+        <p>对方不是你的好友</p>
       </div>
 
       <template v-else>
@@ -433,10 +438,10 @@ async function readd() {
                 class="chat-avatar"
               />
               <button
-                v-if="entry.message.mine && failed[entry.message.id]"
+                v-if="entry.message.mine && isFailed(entry.message)"
                 type="button"
                 class="chat-failed"
-                :title="`${failed[entry.message.id]}，点击重新发送`"
+                :title="`${failedText(entry.message)}，点击重新发送`"
                 aria-label="发送失败，点击重新发送"
                 @click="retryMessage(entry.message)"
               >
@@ -473,9 +478,9 @@ async function readd() {
 
         <div v-if="peerRemoved" class="chat-peer-removed">
           <el-icon :size="15"><WarningFilled /></el-icon>
-          <span>对方已经把你从好友列表移除，消息发不出去。</span>
+          <span>对方不是你的好友</span>
           <el-button size="small" type="primary" plain :loading="readding" @click="readd">
-            重新加好友
+            添加好友
           </el-button>
         </div>
 
@@ -512,7 +517,6 @@ async function readd() {
           </el-popover>
           <el-input
             v-model="draft"
-            placeholder="输入消息，回车发送"
             maxlength="2000"
             @keyup.enter="onEnterKey"
           />
@@ -546,8 +550,7 @@ async function readd() {
         <div v-if="searching" class="chat-search-state">
           <el-skeleton :rows="3" animated />
         </div>
-        <p v-else-if="!searchDone" class="muted chat-search-state">输入关键词后回车搜索。</p>
-        <p v-else-if="!searchResults.length" class="muted chat-search-state">
+        <p v-else-if="searchDone && !searchResults.length" class="muted chat-search-state">
           {{ searchType === 'memo' ? '还没有分享过笔记。' : '没有找到相关的聊天内容。' }}
         </p>
 

@@ -17,6 +17,8 @@ public class ChatMessage {
     private Long senderId;
     private Long recipientId;
     private String content;
+    /** 0 = 没送达（发的时候对方已经把我删了），只有发送方自己看得见 */
+    private Boolean deliverable = true;
     private LocalDateTime readAt;
     private LocalDateTime createdAt;
 }

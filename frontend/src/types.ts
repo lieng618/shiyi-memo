@@ -194,6 +194,8 @@ export interface ChatMessage {
   senderId: number
   mine: boolean
   content: string
+  /** 没送出去（对方不是好友了），只有自己看得见 */
+  failed?: boolean
   createdAt: string
 }
 

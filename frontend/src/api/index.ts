@@ -169,6 +169,9 @@ export const friendApi = {
     http.get<ChatMessage[]>(`/friends/${userId}/chat/search`, { params }).then((r) => r.data),
   /** 清空聊天记录：只清自己这一侧 */
   clearChat: (userId: number) => http.delete(`/friends/${userId}/chat`).then(() => undefined),
+  /** 重发没送出去的消息 */
+  resendChat: (userId: number, messageId: number) =>
+    http.post<ChatMessage>(`/friends/${userId}/chat/${messageId}/resend`).then((r) => r.data),
   sendChat: (userId: number, content: string) =>
     http.post<ChatMessage>(`/friends/${userId}/chat`, { content }).then((r) => r.data),
 }

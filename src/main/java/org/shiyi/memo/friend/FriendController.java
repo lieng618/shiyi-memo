@@ -101,6 +101,12 @@ public class FriendController {
         friendService.clearChat(AuthContext.requireUserId(), userId);
     }
 
+    /** 重发一条没送出去的消息（对方删过我，现在关系恢复了） */
+    @PostMapping("/{userId}/chat/{messageId}/resend")
+    public FriendDtos.ChatMessageDto resendChat(@PathVariable long userId, @PathVariable long messageId) {
+        return friendService.resendChat(AuthContext.requireUserId(), userId, messageId);
+    }
+
     @PostMapping("/{userId}/chat")
     public FriendDtos.ChatMessageDto sendChat(@PathVariable long userId,
                                               @Valid @RequestBody FriendDtos.SendChatRequest request) {
