@@ -77,10 +77,10 @@ public class FriendService {
     @Transactional
     public void remove(long userId, long friendId) {
         requireFriend(userId, friendId);
+        // 单向删除：只删自己这一行。对方的列表和历史都留着（微信那种），
+        // 但对方再发消息时会因为缺了反向关系被拦下
         friendMapper.delete(Wrappers.lambdaQuery(Friend.class)
                 .eq(Friend::getUserId, userId).eq(Friend::getFriendId, friendId));
-        friendMapper.delete(Wrappers.lambdaQuery(Friend.class)
-                .eq(Friend::getUserId, friendId).eq(Friend::getFriendId, userId));
         realtimeEventService.sendAfterCommit(userId, "friends", "refresh");
         realtimeEventService.sendAfterCommit(friendId, "friends", "refresh");
     }
@@ -115,7 +115,8 @@ public class FriendService {
         if (target == null || !target.isEnabled()) {
             throw ApiException.notFound("用户不存在");
         }
-        if (isFriend(userId, toUserId)) {
+        // 只有双方都还在对方列表里才算好友；一方单删过，另一方可以重新申请
+        if (isFriend(userId, toUserId) && isFriend(toUserId, userId)) {
             throw ApiException.badRequest("你们已经是好友了");
         }
         requireUser(userId);
@@ -244,9 +245,9 @@ public class FriendService {
             return;
         }
 
-        if (!isFriend(userId, requesterId)) {
-            insertFriendBothWays(userId, requesterId);
-        }
+        // 单删过的关系在这里恢复：两个方向谁缺补谁，已有的一行保留原样
+        insertFriendIfAbsent(userId, requesterId);
+        insertFriendIfAbsent(requesterId, userId);
         realtimeEventService.sendAfterCommit(userId, "friends", "refresh");
         realtimeEventService.sendAfterCommit(requesterId, "friends", "refresh");
     }
@@ -348,7 +349,7 @@ public class FriendService {
 
     @Transactional
     public FriendDtos.ChatMessageDto sendChat(long userId, long friendId, String content) {
-        requireFriend(userId, friendId);
+        requireMutualFriend(userId, friendId);
         AppUser me = requireUser(userId); // 顺带确认自己账号还是正常状态
 
         ChatMessage message = new ChatMessage();
@@ -387,18 +388,16 @@ public class FriendService {
                 .eq(FriendRequest::getStatus, REQUEST_PENDING)) > 0;
     }
 
-    private void insertFriendBothWays(long a, long b) {
-        LocalDateTime now = LocalDateTime.now();
-        Friend forward = new Friend();
-        forward.setUserId(a);
-        forward.setFriendId(b);
-        forward.setCreatedAt(now);
-        Friend backward = new Friend();
-        backward.setUserId(b);
-        backward.setFriendId(a);
-        backward.setCreatedAt(now);
-        friendMapper.insert(forward);
-        friendMapper.insert(backward);
+    /** 补一行好友关系，已经有就跳过（单删后重新加好友会走到这里） */
+    private void insertFriendIfAbsent(long userId, long friendId) {
+        if (isFriend(userId, friendId)) {
+            return;
+        }
+        Friend row = new Friend();
+        row.setUserId(userId);
+        row.setFriendId(friendId);
+        row.setCreatedAt(LocalDateTime.now());
+        friendMapper.insert(row);
     }
 
     private Set<Long> friendIdsOf(long userId) {
@@ -444,6 +443,17 @@ public class FriendService {
     private void requireFriend(long userId, long otherId) {
         if (!isFriend(userId, otherId)) {
             throw ApiException.notFound("你们还不是好友");
+        }
+    }
+
+    /**
+     * 发消息要求双方都还在对方列表里：历史消息在单删后依然能看，
+     * 但发出去的新消息会被拦下（前端会显示成发送失败）。
+     */
+    private void requireMutualFriend(long userId, long otherId) {
+        requireFriend(userId, otherId);
+        if (!isFriend(otherId, userId)) {
+            throw ApiException.forbidden("对方已经把你从好友列表移除，消息发送失败");
         }
     }
 

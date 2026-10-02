@@ -21,6 +21,17 @@ export interface ApiErrorBody {
   message?: string
 }
 
+/** 带上 HTTP 状态的错误，调用方需要区分具体原因时用得上（比如消息被拒收） */
+export class ApiError extends Error {
+  readonly status?: number
+
+  constructor(message: string, status?: number) {
+    super(message)
+    this.name = 'ApiError'
+    this.status = status
+  }
+}
+
 http.interceptors.response.use(
   (response) => response,
   (error: AxiosError<ApiErrorBody>) => {
@@ -30,12 +41,12 @@ http.interceptors.response.use(
       if (!error.config?.skipAuthRedirect) {
         onUnauthorized.handler()
       }
-      return Promise.reject(new Error(message))
+      return Promise.reject(new ApiError(message, status))
     }
     // 401 之外统一弹提示，调用方一般不需要再处理
     if (status !== 0) {
       ElMessage.error(message)
     }
-    return Promise.reject(new Error(message))
+    return Promise.reject(new ApiError(message, status))
   },
 )
