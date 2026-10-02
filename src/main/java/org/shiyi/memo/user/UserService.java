@@ -12,8 +12,10 @@ import org.shiyi.memo.user.entity.AppUser;
 import org.shiyi.memo.user.entity.UserLevel;
 import org.shiyi.memo.user.mapper.AppUserMapper;
 import org.shiyi.memo.user.mapper.UserLevelMapper;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -22,6 +24,8 @@ import java.util.Locale;
 @Service
 @RequiredArgsConstructor
 public class UserService {
+
+    private static final String NICKNAME_TAKEN = "昵称已被使用，换一个吧";
 
     private final AppUserMapper userMapper;
     private final UserLevelMapper levelMapper;
@@ -109,7 +113,7 @@ public class UserService {
         }
         AppUser user = new AppUser();
         user.setEmail(normalized);
-        user.setNickname(nicknameFromEmail(normalized));
+        user.setNickname(uniqueNicknameFromEmail(normalized));
         user.setLevelId(defaultLevel().getId());
         user.setStatus(1);
         user.setStorageUsed(0L);
@@ -126,11 +130,34 @@ public class UserService {
     }
 
     public AppUser updateNickname(long userId, String nickname) {
+        String value = nickname == null ? "" : nickname.trim();
+        ensureNicknameAvailable(value, userId);
         AppUser patch = new AppUser();
         patch.setId(userId);
-        patch.setNickname(nickname.trim());
-        userMapper.updateById(patch);
+        patch.setNickname(value);
+        try {
+            userMapper.updateById(patch);
+        } catch (DuplicateKeyException ex) {
+            // 并发下唯一索引兜底，给用户看到和查重一样的提示
+            throw ApiException.badRequest(NICKNAME_TAKEN);
+        }
         return get(userId);
+    }
+
+    /**
+     * 昵称唯一：改昵称、后台改昵称都先过这里；数据库上还有唯一索引兜底。
+     * selfId 传自己的 id，避免把自己当成重名。
+     */
+    public void ensureNicknameAvailable(String nickname, Long selfId) {
+        if (!StringUtils.hasText(nickname)) {
+            throw ApiException.badRequest("昵称不能为空");
+        }
+        Long count = userMapper.selectCount(Wrappers.lambdaQuery(AppUser.class)
+                .eq(AppUser::getNickname, nickname)
+                .ne(selfId != null, AppUser::getId, selfId));
+        if (count != null && count > 0) {
+            throw ApiException.badRequest(NICKNAME_TAKEN);
+        }
     }
 
     /** 设置头像：只接受自己上传的图片；fileId 传 null 表示回到默认头像 */
@@ -167,5 +194,20 @@ public class UserService {
         int at = email.indexOf('@');
         String name = at > 0 ? email.substring(0, at) : email;
         return name.length() > 32 ? name.substring(0, 32) : name;
+    }
+
+    /** 首次登录自动注册时的初始昵称，重名就往后加序号，保证唯一 */
+    private String uniqueNicknameFromEmail(String email) {
+        String base = nicknameFromEmail(email);
+        String candidate = base;
+        for (int i = 2; i <= 50; i++) {
+            Long count = userMapper.selectCount(Wrappers.lambdaQuery(AppUser.class)
+                    .eq(AppUser::getNickname, candidate));
+            if (count == null || count == 0) {
+                return candidate;
+            }
+            candidate = base + i;
+        }
+        return base + "_" + (System.currentTimeMillis() % 100000);
     }
 }

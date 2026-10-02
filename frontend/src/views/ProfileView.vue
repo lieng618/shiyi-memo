@@ -96,6 +96,9 @@ async function saveNickname() {
   try {
     auth.user = await userApi.updateProfile(value)
     ElMessage.success('已保存')
+  } catch (error) {
+    // 昵称重复这类问题直接标在输入框下面
+    nicknameError.value = error instanceof Error ? error.message : '保存失败'
   } finally {
     saving.value = false
   }

@@ -24,6 +24,7 @@ import org.shiyi.memo.user.entity.AppUser;
 import org.shiyi.memo.user.entity.UserLevel;
 import org.shiyi.memo.user.mapper.AppUserMapper;
 import org.shiyi.memo.user.mapper.UserLevelMapper;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -121,7 +122,10 @@ public class AdminService {
         AppUser patch = new AppUser();
         patch.setId(user.getId());
         if (StringUtils.hasText(request.nickname())) {
-            patch.setNickname(request.nickname().trim());
+            String nickname = request.nickname().trim();
+            // 昵称唯一，后台改也不能和别人撞
+            userService.ensureNicknameAvailable(nickname, user.getId());
+            patch.setNickname(nickname);
         }
         if (request.levelId() != null) {
             patch.setLevelId(userService.getLevel(request.levelId()).getId());
@@ -129,7 +133,11 @@ public class AdminService {
         if (request.status() != null) {
             patch.setStatus(request.status() == 0 ? 0 : 1);
         }
-        userMapper.updateById(patch);
+        try {
+            userMapper.updateById(patch);
+        } catch (DuplicateKeyException ex) {
+            throw ApiException.badRequest("昵称已被使用，换一个吧");
+        }
         AppUser updated = userService.get(userId);
         UserLevel level = levelMap().get(updated.getLevelId());
         return new AdminDtos.AdminUserDto(updated.getId(), updated.getEmail(), updated.getNickname(),
