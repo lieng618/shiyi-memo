@@ -12,6 +12,7 @@ import org.shiyi.memo.file.entity.FileAsset;
 import org.shiyi.memo.file.mapper.FileAssetMapper;
 import org.shiyi.memo.file.storage.FileStorageService;
 import org.shiyi.memo.file.storage.ThumbnailService;
+import org.shiyi.memo.friend.mapper.ChatMessageMapper;
 import org.shiyi.memo.memo.entity.Memo;
 import org.shiyi.memo.memo.mapper.MemoMapper;
 import org.shiyi.memo.user.UserService;
@@ -51,6 +52,7 @@ public class FileService {
 
     private final FileAssetMapper fileMapper;
     private final MemoMapper memoMapper;
+    private final ChatMessageMapper chatMessageMapper;
     private final UserService userService;
     private final FileStorageService storage;
     private final ThumbnailService thumbnails;
@@ -197,9 +199,17 @@ public class FileService {
         return asset;
     }
 
-    /** 用户读取附件：被屏蔽的直接拒绝 */
+    /**
+     * 用户读取附件：文件所有者，或者与所有者的会话里真的发过这个文件（聊天收图用）；
+     * 被屏蔽的一律拒绝。
+     */
     public FileAsset requireReadable(long userId, long fileId) {
-        FileAsset asset = requireOwned(userId, fileId);
+        FileAsset asset = fileMapper.selectById(fileId);
+        if (asset == null
+                || (!asset.getUserId().equals(userId)
+                && chatMessageMapper.countVisibleFileMessage(userId, asset.getUserId(), fileId) <= 0)) {
+            throw ApiException.notFound("文件不存在");
+        }
         if (Boolean.TRUE.equals(asset.getBlocked())) {
             throw ApiException.forbidden("该文件已被管理员屏蔽"
                     + (asset.getBlockedReason() == null || asset.getBlockedReason().isBlank()

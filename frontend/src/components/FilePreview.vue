@@ -43,7 +43,7 @@ const isPdf = computed(() => props.file?.mime === 'application/pdf')
       <iframe v-else-if="isPdf" :src="file.url" class="preview-frame" :title="file.originalName" />
       <div v-else class="empty">
         <el-icon :size="22"><Document /></el-icon>
-        <p>这个格式没法直接预览，下载后用本地软件打开吧。</p>
+        <p>此文件无法预览，请下载到本地打开</p>
         <el-button type="primary" tag="a" :href="`/api/files/${file.id}/download`">
           <el-icon><Download /></el-icon><span>下载文件</span>
         </el-button>

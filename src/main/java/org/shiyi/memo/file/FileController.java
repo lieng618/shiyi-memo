@@ -55,7 +55,8 @@ public class FileController {
 
     @GetMapping("/{id}")
     public FileDtos.FileDto detail(@PathVariable long id) {
-        return FileDtos.FileDto.from(fileService.requireOwned(AuthContext.requireUserId(), id));
+        // 聊天的对方点开文件卡片时也要取元数据，所以按「可读」而非「所有」校验
+        return FileDtos.FileDto.from(fileService.requireReadable(AuthContext.requireUserId(), id));
     }
 
     /**
@@ -68,11 +69,11 @@ public class FileController {
         return resourceResponse(asset, fileService.pathOf(asset), true);
     }
 
-    /** 图片缩略图；生成失败（例如 HEIC）时退回原图 */
+    /** 图片缩略图；生成失败（例如 HEIC）时退回原图。聊天对方也能取，按可读校验 */
     @GetMapping("/{id}/thumb")
     public ResponseEntity<Resource> thumb(@PathVariable long id,
                                           @RequestParam(defaultValue = "480") Integer w) {
-        FileAsset asset = fileService.requireOwned(AuthContext.requireUserId(), id);
+        FileAsset asset = fileService.requireReadable(AuthContext.requireUserId(), id);
         if (Boolean.TRUE.equals(asset.getBlocked())) {
             throw ApiException.forbidden("该文件已被管理员屏蔽");
         }

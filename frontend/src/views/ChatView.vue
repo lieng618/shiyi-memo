@@ -1,18 +1,41 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import type { Component } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ChatDotRound, DocumentCopy, MoreFilled, WarningFilled } from '@element-plus/icons-vue'
-import { friendApi, memoApi } from '@/api'
+import {
+  ChatDotRound,
+  DocumentCopy,
+  Download,
+  Headset,
+  Loading,
+  MoreFilled,
+  Paperclip,
+  Picture,
+  Tickets,
+  VideoCamera,
+  WarningFilled,
+} from '@element-plus/icons-vue'
+import { fileApi, friendApi, memoApi } from '@/api'
 import { ApiError } from '@/api/http'
-import type { ChatMessage, Friend, MemoSummary } from '@/types'
+import type { ChatMessage, FileAsset, Friend, MemoSummary } from '@/types'
 import { useFriendSummary } from '@/composables/useFriendSummary'
 import { onRealtime } from '@/composables/useRealtime'
 import { useAuthStore } from '@/stores/auth'
 import { loadSmoji, resolveSmoji, smojiMarker } from '@/utils/smoji'
 import { memoShareMarker, resolveMemoShare } from '@/utils/memoShare'
+import {
+  chatFileDownloadUrl,
+  chatFileMarker,
+  chatFileRawUrl,
+  chatFileThumbUrl,
+  formatChatFileSize,
+  resolveChatFile,
+} from '@/utils/chatFile'
+import type { ChatFileKind } from '@/utils/chatFile'
 import { formatFull } from '@/utils/format'
 import EmojiPicker from '@/components/EmojiPicker.vue'
+import FilePreview from '@/components/FilePreview.vue'
 import MemoSharePicker from '@/components/MemoSharePicker.vue'
 import UserAvatar from '@/components/UserAvatar.vue'
 import PageHeader from '@/components/PageHeader.vue'
@@ -36,6 +59,17 @@ const draft = ref('')
 const emojiOpen = ref(false)
 const memoShareOpen = ref(false)
 const listRef = ref<HTMLElement | null>(null)
+
+/** 图片/文件发送：上传进度与两个隐藏的文件选择框 */
+const imageInput = ref<HTMLInputElement | null>(null)
+const fileInput = ref<HTMLInputElement | null>(null)
+const uploading = ref(false)
+const uploadPercent = ref(0)
+/** 文件卡片点开的预览弹窗（复用个人中心的 FilePreview） */
+const previewOpen = ref(false)
+const previewFile = ref<FileAsset | null>(null)
+/** 加载失败的图片（被删/被屏蔽），就地换成占位提示 */
+const imageBroken = ref<Record<number, boolean>>({})
 
 const searchOpen = ref(false)
 const searchType = ref<'text' | 'memo'>('text')
@@ -62,6 +96,7 @@ const messageView = computed(() => messages.value.map((message) => ({
   message,
   emoji: resolveSmoji(message.content),
   memo: resolveMemoShare(message.content),
+  file: resolveChatFile(message.content),
 })))
 
 let pollTimer: ReturnType<typeof setInterval> | undefined
@@ -200,6 +235,72 @@ async function shareMemo(note: MemoSummary) {
 
 function openMemoShare(token: string) {
   void router.push(`/share/${token}`)
+}
+
+/* ---------------------------------------------------------------- 图片 / 文件 */
+
+function fileKindIcon(kind: ChatFileKind): Component {
+  if (kind === 'video') return VideoCamera
+  if (kind === 'audio') return Headset
+  if (kind === 'other') return Tickets
+  return Picture
+}
+
+function pickImage() {
+  if (uploading.value) return
+  imageInput.value?.click()
+}
+
+function pickFile() {
+  if (uploading.value) return
+  fileInput.value?.click()
+}
+
+function onFileChosen(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  // 清掉 value，下次选同一个文件也能触发 change
+  input.value = ''
+  if (file) {
+    void sendChatFile(file)
+  }
+}
+
+/** 先传文件拿到 id，再把标记当作一条消息发出去，复用整套乐观气泡/失败重试 */
+async function sendChatFile(file: File) {
+  if (uploading.value || sending.value) return
+  uploading.value = true
+  uploadPercent.value = 0
+  try {
+    const asset = await fileApi.upload(file, undefined, (percent) => {
+      uploadPercent.value = percent
+    })
+    await sendContent(chatFileMarker({
+      fileId: asset.id,
+      kind: asset.kind,
+      size: asset.size,
+      name: asset.originalName,
+    }))
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '上传失败')
+  } finally {
+    uploading.value = false
+    uploadPercent.value = 0
+  }
+}
+
+function markImageBroken(messageId: number) {
+  imageBroken.value = { ...imageBroken.value, [messageId]: true }
+}
+
+/** 点文件卡片：取最新元数据（mime/尺寸）再进预览弹窗 */
+async function openChatFile(info: { fileId: number }) {
+  try {
+    previewFile.value = await fileApi.get(info.fileId)
+    previewOpen.value = true
+  } catch {
+    ElMessage.error('文件已失效或被屏蔽')
+  }
 }
 
 /* ---------------------------------------------------------------- 右上角菜单 */
@@ -460,6 +561,45 @@ async function readd() {
                     <small>{{ entry.memo.excerpt || '点击查看笔记' }}</small>
                   </span>
                 </button>
+                <div
+                  v-else-if="entry.file && entry.file.kind === 'image' && imageBroken[entry.message.id]"
+                  class="chat-file-missing"
+                >
+                  图片已失效或被屏蔽
+                </div>
+                <div v-else-if="entry.file && entry.file.kind === 'image'" class="chat-image">
+                  <el-image
+                    :src="chatFileThumbUrl(entry.file.fileId)"
+                    :preview-src-list="[chatFileRawUrl(entry.file.fileId)]"
+                    preview-teleported
+                    hide-on-click-modal
+                    @error="markImageBroken(entry.message.id)"
+                  />
+                </div>
+                <div
+                  v-else-if="entry.file"
+                  class="chat-file-card"
+                  role="button"
+                  tabindex="0"
+                  @click="openChatFile(entry.file)"
+                  @keydown.enter.prevent="openChatFile(entry.file)"
+                >
+                  <span class="memo-card-icon">
+                    <el-icon :size="18"><component :is="fileKindIcon(entry.file.kind)" /></el-icon>
+                  </span>
+                  <span class="file-card-copy">
+                    <strong>{{ entry.file.name }}</strong>
+                    <small>{{ formatChatFileSize(entry.file.size) }} · 点击预览</small>
+                  </span>
+                  <a
+                    class="file-card-download"
+                    title="下载"
+                    :href="chatFileDownloadUrl(entry.file.fileId)"
+                    @click.stop
+                  >
+                    <el-icon :size="15"><Download /></el-icon>
+                  </a>
+                </div>
                 <div v-else-if="entry.emoji" class="chat-emoji">
                   <img :src="entry.emoji.url" :alt="entry.emoji.label" loading="lazy" />
                 </div>
@@ -485,6 +625,10 @@ async function readd() {
         </div>
 
         <footer class="chat-input-bar">
+          <div v-if="uploading" class="chat-upload-tip">
+            <el-icon class="is-loading"><Loading /></el-icon>
+            <span>上传中 {{ uploadPercent }}%</span>
+          </div>
           <el-popover
             v-model:visible="memoShareOpen"
             trigger="click"
@@ -515,6 +659,39 @@ async function readd() {
             </template>
             <EmojiPicker @select="sendEmoji" @close="emojiOpen = false" />
           </el-popover>
+          <button
+            type="button"
+            class="emoji-trigger"
+            title="发送图片"
+            aria-label="发送图片"
+            :disabled="uploading"
+            @click="pickImage"
+          >
+            <el-icon :size="19"><Picture /></el-icon>
+          </button>
+          <button
+            type="button"
+            class="emoji-trigger"
+            title="发送文件"
+            aria-label="发送文件"
+            :disabled="uploading"
+            @click="pickFile"
+          >
+            <el-icon :size="19"><Paperclip /></el-icon>
+          </button>
+          <input
+            ref="imageInput"
+            type="file"
+            accept="image/*"
+            hidden
+            @change="onFileChosen"
+          />
+          <input
+            ref="fileInput"
+            type="file"
+            hidden
+            @change="onFileChosen"
+          />
           <el-input
             v-model="draft"
             maxlength="2000"
@@ -585,6 +762,8 @@ async function readd() {
         </ul>
       </div>
     </el-dialog>
+
+    <FilePreview v-model="previewOpen" :file="previewFile" />
   </div>
 </template>
 
@@ -700,6 +879,102 @@ async function readd() {
   object-fit: contain;
 }
 
+/* 图片消息：缩略图气泡，点开看原图 */
+.chat-image {
+  padding: 2px;
+}
+
+.chat-image :deep(.el-image) {
+  display: block;
+  width: min(260px, 64vw);
+  border-radius: 12px;
+  overflow: hidden;
+  cursor: zoom-in;
+}
+
+.chat-image :deep(.el-image__inner) {
+  display: block;
+  width: 100%;
+}
+
+/* 图片没了（被删除/封禁）时的占位 */
+.chat-file-missing {
+  display: inline-block;
+  padding: 9px var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--panel);
+  color: var(--text-3);
+  font-size: 13px;
+}
+
+/* 视频 / 音频 / 其他文件的卡片消息 */
+.chat-file-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: min(300px, 72vw);
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+  transition: border-color var(--dur) var(--ease-out), background var(--dur) var(--ease-out);
+}
+
+.chat-file-card:hover,
+.chat-file-card:focus-visible {
+  border-color: var(--brand-fill);
+  background: var(--brand-soft);
+}
+
+.chat-row.mine .chat-file-card {
+  background: var(--brand-soft);
+  border-color: transparent;
+}
+
+.file-card-copy {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.file-card-copy strong,
+.file-card-copy small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-card-copy strong {
+  font-size: 13.5px;
+}
+
+.file-card-copy small {
+  color: var(--text-3);
+  font-size: 12px;
+}
+
+.file-card-download {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  color: var(--text-2);
+  transition: background var(--dur) var(--ease-out), color var(--dur) var(--ease-out);
+}
+
+.file-card-download:hover,
+.file-card-download:focus-visible {
+  background: var(--panel-2);
+  color: var(--brand);
+}
+
 .chat-memo-card {
   display: flex;
   align-items: flex-start;
@@ -810,6 +1085,7 @@ async function readd() {
 }
 
 .chat-input-bar {
+  position: relative;
   display: flex;
   align-items: center;
   gap: var(--space-2);
@@ -819,6 +1095,23 @@ async function readd() {
   padding: var(--space-3) var(--space-4) var(--space-4);
   border-top: 1px solid var(--border);
   background: var(--bg);
+}
+
+/* 上传时的悬浮进度条 */
+.chat-upload-tip {
+  position: absolute;
+  right: var(--space-4);
+  bottom: calc(100% + 8px);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--text-2);
+  font-size: 12.5px;
+  box-shadow: 0 4px 16px rgb(0 0 0 / 8%);
 }
 
 .emoji-trigger,
@@ -872,7 +1165,8 @@ async function readd() {
 
 /* 从搜索结果跳过来时闪一下，方便定位 */
 .chat-row--hit .chat-bubble,
-.chat-row--hit .chat-memo-card {
+.chat-row--hit .chat-memo-card,
+.chat-row--hit .chat-file-card {
   border-color: var(--brand-fill);
   box-shadow: 0 0 0 3px var(--brand-soft);
 }
@@ -989,6 +1283,10 @@ async function readd() {
   .chat-emoji img {
     width: 96px;
     height: 96px;
+  }
+
+  .chat-image :deep(.el-image) {
+    width: min(200px, 56vw);
   }
 }
 </style>

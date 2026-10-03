@@ -12,6 +12,8 @@ import org.shiyi.memo.friend.entity.FriendRequest;
 import org.shiyi.memo.friend.mapper.ChatClearMapper;
 import org.shiyi.memo.friend.mapper.ChatMessageMapper;
 import org.shiyi.memo.friend.mapper.FriendMapper;
+import org.shiyi.memo.file.FileService;
+import org.shiyi.memo.file.entity.FileAsset;
 import org.shiyi.memo.friend.mapper.FriendRequestMapper;
 import org.shiyi.memo.realtime.RealtimeEventService;
 import org.shiyi.memo.user.dto.UserDtos;
@@ -30,6 +32,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.function.Function;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
@@ -49,6 +53,7 @@ public class FriendService {
     private final ChatMessageMapper chatMessageMapper;
     private final ChatClearMapper chatClearMapper;
     private final AppUserMapper userMapper;
+    private final FileService fileService;
     private final RealtimeEventService realtimeEventService;
 
     /* ---------------------------------------------------------------- 好友列表 */
@@ -304,7 +309,7 @@ public class FriendService {
 
     /**
      * 查聊天内容：memoOnly = true 时只看分享的笔记，否则按关键词搜纯文字消息
-     * （表情和笔记分享的原始内容是一串标记，按文字搜没有意义，直接排除）。
+     * （表情、笔记分享和文件消息的原始内容是一串标记，按文字搜没有意义，直接排除）。
      */
     public List<FriendDtos.ChatMessageDto> searchChat(long userId, long friendId, String keyword, boolean memoOnly) {
         requireFriend(userId, friendId);
@@ -320,6 +325,7 @@ public class FriendService {
                         .like(!memoOnly, ChatMessage::getContent, escapeLike(kw))
                         .notLikeRight(!memoOnly, ChatMessage::getContent, SMOJI_PREFIX)
                         .notLikeRight(!memoOnly, ChatMessage::getContent, MEMO_SHARE_PREFIX)
+                        .notLikeRight(!memoOnly, ChatMessage::getContent, FILE_PREFIX)
                         .orderByDesc(ChatMessage::getId)
                         .last("limit 50"))
                 .stream()
@@ -350,6 +356,10 @@ public class FriendService {
 
     @Transactional
     public FriendDtos.ChatMessageDto sendChat(long userId, long friendId, String content) {
+        String trimmed = content == null ? "" : content.trim();
+        if (trimmed.startsWith(FILE_PREFIX)) {
+            requireValidFileMarker(userId, trimmed);
+        }
         // 自己这边删了对方就不能发；对方删了我还是能发，但这条只留给自己看
         requireFriend(userId, friendId);
         AppUser me = requireUser(userId); // 顺带确认自己账号还是正常状态
@@ -358,7 +368,7 @@ public class FriendService {
         ChatMessage message = new ChatMessage();
         message.setSenderId(userId);
         message.setRecipientId(friendId);
-        message.setContent(content.trim());
+        message.setContent(trimmed);
         message.setDeliverable(deliverable);
         message.setCreatedAt(LocalDateTime.now());
         chatMessageMapper.insert(message);
@@ -414,9 +424,25 @@ public class FriendService {
 
     /* ---------------------------------------------------------------- 内部工具 */
 
-    /** 聊天气泡里表情和笔记分享的原文标记，和前端约定一致 */
+    /** 聊天气泡里表情、笔记分享和文件的原文标记，和前端约定一致 */
     private static final String SMOJI_PREFIX = "[[smoji:";
     private static final String MEMO_SHARE_PREFIX = "[[memo-share:";
+    private static final String FILE_PREFIX = "[[file:";
+    /** [[file:{fileId}:{kind}:{size}:{encodeURIComponent(文件名)}]] */
+    private static final Pattern FILE_MARKER = Pattern.compile(
+            "^\\[\\[file:(\\d+):(image|video|audio|other):(\\d+):([^\\]]+)\\]\\]$");
+
+    /** 文件消息：标记必须完整，而且文件确实存在、属于发送者、没被屏蔽 */
+    private void requireValidFileMarker(long userId, String content) {
+        Matcher matcher = FILE_MARKER.matcher(content);
+        if (!matcher.matches()) {
+            throw ApiException.badRequest("文件消息格式不正确");
+        }
+        FileAsset asset = fileService.requireOwned(userId, Long.parseLong(matcher.group(1)));
+        if (Boolean.TRUE.equals(asset.getBlocked())) {
+            throw ApiException.forbidden("该文件已被管理员屏蔽");
+        }
+    }
 
     public boolean isFriend(long userId, long otherId) {
         return friendMapper.selectCount(Wrappers.lambdaQuery(Friend.class)
@@ -516,7 +542,23 @@ public class FriendService {
         if (value.startsWith(MEMO_SHARE_PREFIX)) {
             return "[分享的笔记]";
         }
+        if (value.startsWith(FILE_PREFIX)) {
+            return filePreviewLabel(value);
+        }
         return value.length() > 80 ? value.substring(0, 80) + "…" : value;
+    }
+
+    private static String filePreviewLabel(String content) {
+        Matcher matcher = FILE_MARKER.matcher(content);
+        if (!matcher.matches()) {
+            return "[文件]";
+        }
+        return switch (matcher.group(2)) {
+            case "image" -> "[图片]";
+            case "video" -> "[视频]";
+            case "audio" -> "[语音]";
+            default -> "[文件]";
+        };
     }
 
     /** 关键词里的 % 和 _ 是 like 的通配符，搜索时要当成普通字符 */
