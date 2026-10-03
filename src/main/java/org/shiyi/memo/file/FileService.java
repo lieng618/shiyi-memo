@@ -29,9 +29,13 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.DigestInputStream;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.HexFormat;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
@@ -83,12 +87,23 @@ public class FileService {
         String kind = kindOf(mime, ext);
         String relativePath = buildRelativePath(userId, ext);
 
+        // 边写盘边算 SHA-256，供内容去重用
+        String contentHash;
         String stored;
         try (InputStream in = multipart.getInputStream()) {
-            stored = storage.store(in, relativePath);
+            DigestInputStream digesting = new DigestInputStream(in, sha256());
+            stored = storage.store(digesting, relativePath);
+            contentHash = HexFormat.of().formatHex(digesting.getMessageDigest().digest());
         } catch (IOException ex) {
             log.error("写入文件失败 userId={} name={}", userId, originalName, ex);
             throw new ApiException(500, "文件写入失败，请重试");
+        }
+
+        // 同账号传过相同内容：丢掉刚落盘的这份，直接引用旧的物理文件
+        FileAsset twin = findContentTwin(userId, contentHash);
+        if (twin != null) {
+            storage.delete(stored);
+            stored = twin.getStoragePath();
         }
 
         FileAsset asset = new FileAsset();
@@ -100,18 +115,26 @@ public class FileService {
         asset.setSize(size);
         asset.setKind(kind);
         asset.setStoragePath(stored);
+        asset.setContentHash(contentHash);
         try {
             fileMapper.insert(asset);
         } catch (RuntimeException ex) {
-            storage.delete(stored);
+            if (twin == null) {
+                storage.delete(stored);
+            }
             throw ex;
         }
         userService.addStorageUsed(userId, size);
 
-        if ("image".equals(kind)) {
+        if (twin != null) {
+            // 内容一样图片尺寸必然一样，直接沿用，省一次解码
+            asset.setWidth(twin.getWidth());
+            asset.setHeight(twin.getHeight());
+        } else if ("image".equals(kind)) {
             probeImageSize(asset);
         }
-        log.info("文件上传成功 user={} fileId={} name={} size={}", userId, asset.getId(), originalName, size);
+        log.info("文件上传成功 user={} fileId={} name={} size={} dedup={}",
+                userId, asset.getId(), originalName, size, twin != null);
         return FileDtos.FileDto.from(asset);
     }
 
@@ -141,12 +164,21 @@ public class FileService {
         String relativePath = buildRelativePath(userId, ext);
 
         CountingInputStream counting = new CountingInputStream(in);
+        String contentHash;
         String stored;
         try {
-            stored = storage.store(counting, relativePath);
+            DigestInputStream digesting = new DigestInputStream(counting, sha256());
+            stored = storage.store(digesting, relativePath);
+            contentHash = HexFormat.of().formatHex(digesting.getMessageDigest().digest());
         } catch (IOException ex) {
             log.error("备份导入写文件失败 userId={} name={}", userId, cleanName, ex);
             throw new ApiException(500, "附件写入失败，导入已中止");
+        }
+
+        FileAsset twin = findContentTwin(userId, contentHash);
+        if (twin != null) {
+            storage.delete(stored);
+            stored = twin.getStoragePath();
         }
 
         FileAsset asset = new FileAsset();
@@ -158,15 +190,21 @@ public class FileService {
         asset.setSize(counting.count);
         asset.setKind(kind);
         asset.setStoragePath(stored);
+        asset.setContentHash(contentHash);
         try {
             fileMapper.insert(asset);
         } catch (RuntimeException ex) {
-            storage.delete(stored);
+            if (twin == null) {
+                storage.delete(stored);
+            }
             throw ex;
         }
         userService.addStorageUsed(userId, counting.count);
 
-        if ("image".equals(kind)) {
+        if (twin != null) {
+            asset.setWidth(twin.getWidth());
+            asset.setHeight(twin.getHeight());
+        } else if ("image".equals(kind)) {
             probeImageSize(asset);
         }
         return asset;
@@ -343,9 +381,32 @@ public class FileService {
 
     private void removeAsset(FileAsset asset) {
         fileMapper.deleteById(asset.getId());
-        storage.delete(asset.getStoragePath());
+        // 内容去重后多个 asset 行可能共用同一个物理文件，还有别的行引用就不能删
+        long siblings = fileMapper.selectCount(Wrappers.lambdaQuery(FileAsset.class)
+                .eq(FileAsset::getStoragePath, asset.getStoragePath())
+                .ne(FileAsset::getId, asset.getId()));
+        if (siblings == 0) {
+            storage.delete(asset.getStoragePath());
+        }
         thumbnails.deleteFor(asset.getId());
         userService.addStorageUsed(asset.getUserId(), -asset.getSize());
+    }
+
+    /** 同一个用户之前传过相同内容的文件，取最早的一份（正在屏蔽中的行也参与匹配，路径本身不涉及权限） */
+    private FileAsset findContentTwin(long userId, String contentHash) {
+        return fileMapper.selectOne(Wrappers.lambdaQuery(FileAsset.class)
+                .eq(FileAsset::getUserId, userId)
+                .eq(FileAsset::getContentHash, contentHash)
+                .orderByAsc(FileAsset::getId)
+                .last("limit 1"));
+    }
+
+    private static MessageDigest sha256() {
+        try {
+            return MessageDigest.getInstance("SHA-256");
+        } catch (NoSuchAlgorithmException ex) {
+            throw new IllegalStateException("SHA-256 不可用", ex);
+        }
     }
 
     private void requireMemo(long userId, long memoId) {

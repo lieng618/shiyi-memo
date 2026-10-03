@@ -24,6 +24,8 @@ public class FileAsset {
     private Integer width;
     private Integer height;
     private String storagePath;
+    /** 文件内容 SHA-256，同账号去重用 */
+    private String contentHash;
     /** 后台屏蔽：1 表示用户不能再查看 / 下载 */
     private Boolean blocked;
     private String blockedReason;
