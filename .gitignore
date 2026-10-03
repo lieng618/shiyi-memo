@@ -61,3 +61,7 @@ start/
 # 只在本机看，不进仓库
 文案清单.md
 tools/extract-copy.mjs
+
+### Docker ###
+# docker compose 的真实环境配置(含密钥),仓库里只放 .env.example
+.env

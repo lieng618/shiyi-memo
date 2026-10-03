@@ -96,6 +96,7 @@ shiyi-memo/
 ├─ design-system/                     设计系统与视觉规范
 ├─ start/                             可执行 jar 与线上配置（构建产物）
 ├─ ecosystem.config.js                PM2 应用配置
+├─ Dockerfile / docker-compose.yml   Docker 一键构建启动（.env.example 为配置模板）
 ├─ start-windows.ps1 / start-linux.sh 一键构建部署脚本
 └─ dev.ps1                            本地开发启动脚本
 ```
@@ -115,6 +116,8 @@ shiyi-memo/
 git clone https://gitee.com/lieng618/shiyi-memo.git
 cd shiyi-memo
 ```
+
+> 装了 Docker 的话，可以跳过下面的环境安装和建库，直接看 [Docker 部署](#docker-部署)一条命令跑起来。
 
 ### 2. 创建数据库
 
@@ -194,6 +197,40 @@ bash start-linux.sh       # Linux 服务器：前端构建 → 后端打包 → 
 线上配置 `start/application-local.yml` 与 jar 放在一起，由 PM2 通过 `--spring.config.additional-location` 加载；日志输出到 `start/logs/`。
 
 > 公网部署前请务必：替换 `app.jwt.secret`、修改后台账号密码，并把 `app.mail.expose-code` 设为 `false`。
+
+## Docker 部署
+
+不用装 JDK / Maven / Node / MySQL，克隆仓库后一条命令完成构建和启动（首次构建会慢一些）：
+
+```bash
+docker compose up -d --build
+```
+
+- 用户端：<http://localhost:8080>
+- 后台控制台：<http://localhost:8080/admin>（默认 `admin / change-me`，务必修改）
+
+MySQL 数据存在 Docker 卷 `mysql-data` 里，表结构由 Flyway 自动创建；上传的文件和日志分别落在宿主机的 `./data` 与 `./logs`，和 jar 部署的目录结构一致。升级版本：`git pull && docker compose up -d --build`。
+
+> Linux 上如果容器写 `./data` 报权限错误，执行 `sudo chown -R 1000:1000 data logs`（容器内应用固定以 UID 1000 运行）。
+
+配置通过环境变量覆盖，把 [.env.example](.env.example) 复制成 `.env` 后按需修改（`.env` 不进仓库）：
+
+| 变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `APP_PORT` | `8080` | 对外端口 |
+| `MYSQL_PASSWORD` / `MYSQL_ROOT_PASSWORD` | 见 `.env.example` | 数据库密码 |
+| `APP_JWT_SECRET` | 开发用默认值 | 登录令牌密钥，至少 32 字节，公网务必换成随机值 |
+| `APP_JWT_SECURE_COOKIE` | `false` | 启用 HTTPS 后设为 `true` |
+| `APP_ADMIN_USERNAME` / `APP_ADMIN_PASSWORD` | `admin` / `change-me` | 后台控制台账号 |
+| `APP_BASE_URL` | `http://localhost:8080` | 站点对外地址，邮件链接会用它 |
+| `APP_SECURITY_ALLOW_REGISTER` | `true` | 是否允许新邮箱自助注册 |
+| `APP_MAIL_ENABLED` | `false` | 是否真实发送验证码邮件 |
+| `APP_MAIL_EXPOSE_CODE` | `true` | 验证码由接口直接返回，仅限内网体验，公网必须设为 `false` |
+| `SPRING_MAIL_HOST` / `SPRING_MAIL_PORT` | `smtp.qq.com` / `465` | SMTP 服务器 |
+| `SPRING_MAIL_USERNAME` / `SPRING_MAIL_PASSWORD` | 空 | SMTP 账号与授权码 |
+| `APP_MAIL_FROM` | 空 | 发件人地址 |
+
+> 公网部署前请务必：替换 `APP_JWT_SECRET`、修改后台账号密码、配置 SMTP 并把 `APP_MAIL_EXPOSE_CODE` 设为 `false`。
 
 ## 数据与备份
 

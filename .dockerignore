@@ -1,0 +1,17 @@
+# 构建产物在镜像内重新生成,这些本地内容不进构建上下文
+.git
+.zcode
+.tools
+.idea
+target
+start
+data
+logs
+docs
+design-system
+desktop
+frontend/node_modules
+src/main/resources/static
+*.log
+*.md
+!README.md

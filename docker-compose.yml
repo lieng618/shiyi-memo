@@ -1,0 +1,75 @@
+# 拾忆 Docker 部署:应用 + MySQL 一起起,数据库表结构由 Flyway 自动创建
+#
+# 首次启动:docker compose up -d --build
+# 升级:    git pull && docker compose up -d --build
+#
+# 可用 .env 覆盖的变量(见 README「Docker 部署」),公网部署务必改:
+#   MYSQL_PASSWORD / APP_JWT_SECRET / APP_ADMIN_PASSWORD / APP_MAIL_*
+
+services:
+  mysql:
+    image: mysql:8
+    container_name: shiyi-memo-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: shiyi_memo
+      MYSQL_USER: shiyi
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-shiyi-memo}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-shiyi-memo-root}
+      TZ: Asia/Shanghai
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_0900_ai_ci
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p\"$$MYSQL_ROOT_PASSWORD\" --silent"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 30s
+
+  app:
+    build: .
+    image: shiyi-memo
+    container_name: shiyi-memo
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    ports:
+      - "${APP_PORT:-8080}:8080"
+    environment:
+      TZ: Asia/Shanghai
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/shiyi_memo?useUnicode=true&characterEncoding=utf8&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&rewriteBatchedStatements=true
+      SPRING_DATASOURCE_USERNAME: shiyi
+      SPRING_DATASOURCE_PASSWORD: ${MYSQL_PASSWORD:-shiyi-memo}
+      # 登录令牌密钥,至少 32 字节;公网部署必须换成随机值
+      APP_JWT_SECRET: ${APP_JWT_SECRET:-dev-only-secret-please-change-me-0123456789}
+      APP_ADMIN_USERNAME: ${APP_ADMIN_USERNAME:-admin}
+      APP_ADMIN_PASSWORD: ${APP_ADMIN_PASSWORD:-change-me}
+      # 站点对外地址,邮件正文里的链接会用它
+      APP_BASE_URL: ${APP_BASE_URL:-http://localhost:8080}
+      # 启用 HTTPS 后设为 true
+      APP_JWT_SECURE_COOKIE: ${APP_JWT_SECURE_COOKIE:-false}
+      APP_STORAGE_ROOT: /app/data/uploads
+      APP_STORAGE_THUMBNAIL_ROOT: /app/data/thumbnails
+      LOGGING_FILE_NAME: /app/logs/shiyi-memo.log
+      # 邮件验证码:默认不真实发信、验证码由登录接口直接返回,仅限自己内网体验;
+      # 公网部署请配上 SMTP 并把 APP_MAIL_ENABLED 设为 true、APP_MAIL_EXPOSE_CODE 设为 false
+      APP_MAIL_ENABLED: ${APP_MAIL_ENABLED:-false}
+      APP_MAIL_EXPOSE_CODE: ${APP_MAIL_EXPOSE_CODE:-true}
+      APP_MAIL_FROM: ${APP_MAIL_FROM:-}
+      SPRING_MAIL_HOST: ${SPRING_MAIL_HOST:-smtp.qq.com}
+      SPRING_MAIL_PORT: ${SPRING_MAIL_PORT:-465}
+      SPRING_MAIL_USERNAME: ${SPRING_MAIL_USERNAME:-}
+      SPRING_MAIL_PASSWORD: ${SPRING_MAIL_PASSWORD:-}
+      # 是否允许新邮箱自助注册
+      APP_SECURITY_ALLOW_REGISTER: ${APP_SECURITY_ALLOW_REGISTER:-true}
+    volumes:
+      # 上传文件和缩略图落在宿主机 ./data,日志在 ./logs,和 jar 部署的目录结构一致
+      - ./data:/app/data
+      - ./logs:/app/logs
+
+volumes:
+  mysql-data:
