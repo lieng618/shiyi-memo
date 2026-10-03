@@ -70,6 +70,8 @@ const previewOpen = ref(false)
 const previewFile = ref<FileAsset | null>(null)
 /** 加载失败的图片（被删/被屏蔽），就地换成占位提示 */
 const imageBroken = ref<Record<number, boolean>>({})
+/** 外部文件拖进来的悬停层数，进出子元素会成对触发，归零才收起遮罩 */
+const dragDepth = ref(0)
 
 const searchOpen = ref(false)
 const searchType = ref<'text' | 'memo'>('text')
@@ -293,6 +295,60 @@ function markImageBroken(messageId: number) {
   imageBroken.value = { ...imageBroken.value, [messageId]: true }
 }
 
+/* ---------------------------------------------------------------- 拖拽发送 */
+
+function draggingFiles(event: DragEvent) {
+  return Array.from(event.dataTransfer?.types ?? []).includes('Files')
+}
+
+function canAcceptDrop() {
+  return !notFriend.value && !uploading.value
+}
+
+function onDragEnter(event: DragEvent) {
+  if (draggingFiles(event) && canAcceptDrop()) {
+    dragDepth.value += 1
+  }
+}
+
+function onDragOver(event: DragEvent) {
+  if (draggingFiles(event) && event.dataTransfer) {
+    event.dataTransfer.dropEffect = canAcceptDrop() ? 'copy' : 'none'
+  }
+}
+
+function onDragLeave() {
+  dragDepth.value = Math.max(0, dragDepth.value - 1)
+}
+
+function onDrop(event: DragEvent) {
+  dragDepth.value = 0
+  const files = Array.from(event.dataTransfer?.files ?? [])
+  if (!files.length || !canAcceptDrop()) {
+    return
+  }
+  void confirmAndSendFiles(files)
+}
+
+/** 拖进来的文件先确认再发；一次拖多个就逐个上传、逐条发送 */
+async function confirmAndSendFiles(files: File[]) {
+  const label = files.length === 1
+    ? `是否发送文件「${files[0].name}」？`
+    : `是否发送 ${files.length} 个文件？`
+  try {
+    await ElMessageBox.confirm(label, '发送文件', {
+      confirmButtonText: '发送',
+      cancelButtonText: '取消',
+      type: 'info',
+    })
+  } catch {
+    return
+  }
+  for (const file of files) {
+    await sendChatFile(file)
+  }
+}
+
 /** 点文件卡片：取最新元数据（mime/尺寸）再进预览弹窗 */
 async function openChatFile(info: { fileId: number }) {
   try {
@@ -492,7 +548,13 @@ async function readd() {
 </script>
 
 <template>
-  <div class="chat-page">
+  <div
+    class="chat-page"
+    @dragenter.prevent="onDragEnter"
+    @dragover.prevent="onDragOver"
+    @dragleave="onDragLeave"
+    @drop.prevent="onDrop"
+  >
     <PageHeader :title="friend?.nickname ?? '聊天'" back-to="/friends" back-label="返回好友列表">
       <template #actions>
         <el-dropdown v-if="!loading && !notFriend" trigger="click" placement="bottom-end" @command="onMenuCommand">
@@ -763,17 +825,49 @@ async function readd() {
       </div>
     </el-dialog>
 
+    <div v-if="dragDepth > 0" class="chat-drop-overlay" aria-hidden="true">
+      <div class="chat-drop-box">
+        <el-icon :size="26"><Paperclip /></el-icon>
+        <span>松开发送文件</span>
+      </div>
+    </div>
+
     <FilePreview v-model="previewOpen" :file="previewFile" />
   </div>
 </template>
 
 <style scoped>
 .chat-page {
+  position: relative;
   display: flex;
   flex-direction: column;
   height: 100vh;
   height: 100dvh;
   background: var(--bg);
+}
+
+/* 拖文件进来时的全页提示遮罩；pointer-events 别挡住 drop */
+.chat-drop-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  background: var(--el-overlay-color-lighter);
+  pointer-events: none;
+}
+
+.chat-drop-box {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 18px 28px;
+  border: 2px dashed var(--brand-fill);
+  border-radius: 14px;
+  background: var(--panel);
+  color: var(--brand-hover);
+  font-size: 14px;
+  font-weight: 600;
 }
 
 .chat-body {
