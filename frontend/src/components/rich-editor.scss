@@ -48,41 +48,6 @@ $box-radius: var(--radius-sm);
     }
   }
 
-  /* 工具栏末尾的自定义按钮（如导出）：尺寸、配色和悬停效果对齐 .w-e-bar-item button */
-  .rich-editor-extras {
-    display: flex;
-    flex: 0 0 auto;
-    align-items: center;
-    height: 40px;
-    padding: 4px 5px 4px 0;
-
-    button {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      height: 32px;
-      min-width: 32px;
-      padding: 0 8px;
-      border: none;
-      border-radius: $box-radius;
-      background: transparent;
-      color: var(--text-2);
-      font-size: 14px;
-      cursor: pointer;
-      transition: background 0.15s, color 0.15s;
-    }
-
-    button:hover:not(:disabled) {
-      background: var(--panel-hover);
-      color: var(--text);
-    }
-
-    button:disabled {
-      opacity: 0.45;
-      cursor: not-allowed;
-    }
-  }
-
   .menu-item {
     display: flex;
     flex-direction: row;

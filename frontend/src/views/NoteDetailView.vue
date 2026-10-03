@@ -1,14 +1,13 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
-import { ArrowLeft, Download } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
+import { ArrowLeft } from '@element-plus/icons-vue'
 import { memoApi, tagApi } from '@/api'
 import type { MemoDetail, Tag } from '@/types'
 import { formatFull } from '@/utils/format'
 import { debounce } from '@/composables/useDebounce'
 import { exportNote, type ExportFormat } from '@/utils/noteExport'
-import RichEditor from '@/components/RichEditor.vue'
+import RichEditor, { exportTriggerStore } from '@/components/RichEditor.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -56,6 +55,9 @@ watch([title, contentHtml], () => {
 })
 
 onMounted(async () => {
+  // 编辑器工具栏的「导出」分组菜单通过这个桥接调到本页的导出逻辑。
+  // 必须在编辑器挂载（loading 结束后）之前就绪，否则工具栏会判定导出不可用。
+  exportTriggerStore.__shiyiExportNote = onExport
   await Promise.all([loadDetail(), loadTags()])
   window.addEventListener('keydown', onKeydown)
   await nextTick()
@@ -63,6 +65,7 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  exportTriggerStore.__shiyiExportNote = null
   window.removeEventListener('keydown', onKeydown)
   scheduleSave.cancel()
 })
@@ -151,11 +154,11 @@ function onTagsChanged() {
 }
 
 /** 导出用的是编辑器里的最新内容，没保存的部分也在内 */
-async function onExport(format: string | number | object) {
+async function onExport(format: ExportFormat) {
   if (!detail.value || exporting.value) return
   exporting.value = true
   try {
-    await exportNote(format as ExportFormat, {
+    await exportNote(format, {
       title: title.value.trim() || detail.value.title,
       contentHtml: contentHtml.value,
     })
@@ -207,32 +210,7 @@ async function onExport(format: string | number | object) {
 
     <div class="editor-wrap">
       <el-skeleton v-if="loading" :rows="6" animated class="editor-skeleton" />
-      <RichEditor v-else v-model="contentHtml" :memo-id="noteId">
-        <template #toolbar-end>
-          <el-dropdown trigger="click" placement="bottom-end" @command="onExport">
-            <button
-              type="button"
-              class="toolbar-export"
-              :disabled="exporting"
-              aria-label="导出笔记"
-              aria-haspopup="menu"
-              title="导出"
-              @mousedown.prevent
-            >
-              <el-icon :size="15"><Download /></el-icon>
-            </button>
-            <template #dropdown>
-              <el-dropdown-menu>
-                <el-dropdown-item command="md">Markdown（.md）</el-dropdown-item>
-                <el-dropdown-item command="html">网页（.html）</el-dropdown-item>
-                <el-dropdown-item command="doc">Word（.doc）</el-dropdown-item>
-                <el-dropdown-item command="pdf" divided>PDF（.pdf）</el-dropdown-item>
-                <el-dropdown-item command="png">长图（.png）</el-dropdown-item>
-              </el-dropdown-menu>
-            </template>
-          </el-dropdown>
-        </template>
-      </RichEditor>
+      <RichEditor v-else v-model="contentHtml" :memo-id="noteId" />
     </div>
   </div>
 </template>
