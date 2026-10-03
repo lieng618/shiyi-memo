@@ -1,106 +1,223 @@
-# 拾忆
+<div align="center">
 
-拾忆是一个 Markdown 备忘录和文件收集站，支持笔记编辑、标签、搜索、置顶、附件上传和公开分享。
+<img src="frontend/public/logo.png" alt="拾忆" width="120" />
 
-## 功能
+# 拾忆 · Shiyi Memo
 
-- 邮箱验证码登录，首次登录自动注册，可设置登录密码
-- Markdown 编辑、预览、撤销、字号、颜色和段落格式化
-- 标签、全文搜索、置顶和自动保存
-- 图片、视频、音频和文件上传，图片自动生成缩略图
-- 笔记公开分享，可随时开启或关闭
-- 个人中心、空间配额、深浅主题和站内信
-- 独立后台控制台，可管理用户、笔记、文件、消息和等级
+**自托管的 Markdown 笔记与文件库**
+
+拾起零散记录，收好重要文件
+
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Java](https://img.shields.io/badge/Java-21-orange.svg)](https://openjdk.org/)
+[![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.5-brightgreen.svg)](https://spring.io/projects/spring-boot)
+[![Vue](https://img.shields.io/badge/Vue-3-42b883.svg)](https://vuejs.org/)
+[![MySQL](https://img.shields.io/badge/MySQL-8-4479A1.svg)](https://www.mysql.com/)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](#贡献)
+
+</div>
+
+---
+
+## 简介
+
+拾忆是一个可以完全自托管的个人知识空间：用 Markdown 记录笔记，用标签和全文搜索整理归类，把图片、音视频和各类文件一起收进来，需要时生成一条公开链接分享给任何人。
+
+前后端打包成单个可执行 jar，配一个 MySQL 就能跑起来；后台控制台独立于用户端，方便自己或小团队做多用户管理。
+
+## 功能特性
+
+**笔记**
+
+- Markdown 编辑与实时预览，支持撤销、字号、颜色和段落格式化
+- 标签、全文搜索、置顶与自动保存
+- 单条笔记导出为 Markdown / HTML / Word / PDF / 长图
+- 笔记可一键公开分享，随时开启或关闭
+
+**文件**
+
+- 图片、视频、音频和任意文件上传，图片自动生成缩略图
+- 个人空间配额，按用户等级控制上传上限
+- 附件在线预览、下载，后台可对文件做封禁处理
+
+**社交**
+
+- 邮箱验证码登录，首次登录自动注册，也可设置登录密码
+- 好友关系与申请、站内信、基于 SSE 的实时聊天
+- 聊天记录搜索、清空会话、单向删除好友
+
+**个人中心与后台**
+
+- 个人资料、头像、深浅主题、空间用量查看
+- 个人数据一键打包备份 / 恢复（zip：笔记 + 标签 + 附件）
+- 独立后台控制台：用户、笔记、文件、消息、用户等级管理
 
 ## 技术栈
 
-- 后端：Java 21、Spring Boot 3.5、MyBatis-Plus、Flyway
-- 前端：Vue 3、Vite、TypeScript、Element Plus、Pinia
-- 数据库：MySQL 8
+| 层次 | 技术 |
+| --- | --- |
+| 后端 | Java 21 · Spring Boot 3.5 · MyBatis-Plus · Flyway · JJWT |
+| 前端 | Vue 3 · Vite · TypeScript · Element Plus · Pinia · Vue Router |
+| 数据库 | MySQL 8 |
+| 桌面端 | Electron（Windows 外壳，可选） |
+| 部署 | 前端产物内嵌进 jar，PM2 守护进程 |
 
-## 本地运行
+## 项目结构
 
-需要 JDK 21、Maven 3.9、Node.js 20+ 和 MySQL 8。
+```text
+shiyi-memo/
+├─ src/main/java/org/shiyi/memo/      后端源码（auth / memo / file / friend ... 分模块）
+├─ src/main/resources/
+│  ├─ application.yml                 默认配置
+│  ├─ application-local.yml.example   本地配置模板
+│  ├─ db/migration/                   Flyway 数据库迁移脚本
+│  └─ static/                         前端构建产物（npm run build 生成）
+├─ frontend/                          Vue 3 前端（前台 + 后台两个入口）
+├─ desktop/                           Electron 桌面端（见 desktop/README.md）
+├─ design-system/                     设计系统与视觉规范
+├─ start/                             可执行 jar 与线上配置（构建产物）
+├─ ecosystem.config.js                PM2 应用配置
+├─ start-windows.ps1 / start-linux.sh 一键构建部署脚本
+└─ dev.ps1                            本地开发启动脚本
+```
 
-1. 创建数据库：
+## 快速开始
+
+### 环境要求
+
+- JDK 21
+- Maven 3.9+
+- Node.js 20+
+- MySQL 8
+
+### 1. 克隆仓库
+
+```bash
+git clone https://gitee.com/lieng618/shiyi-memo.git
+cd shiyi-memo
+```
+
+### 2. 创建数据库
 
 ```sql
 CREATE DATABASE shiyi_memo
   DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
 ```
 
-2. 参考 `src/main/resources/application-local.yml.example` 创建本地配置：
+表结构由 Flyway 在首次启动时自动建好，无需手动执行 SQL。
 
-```text
-src/main/resources/application-local.yml
+### 3. 准备本地配置
+
+复制模板并按需填写：
+
+```bash
+cp src/main/resources/application-local.yml.example src/main/resources/application-local.yml
 ```
 
-至少填写数据库连接。需要邮件登录时，再配置 SMTP。
+至少填写数据库连接；需要邮箱验证码登录时，再补上 SMTP 账号与授权码。
 
-3. 构建并启动：
+### 4. 构建并启动
 
-```powershell
-cd frontend
-npm install
-npm run build
-cd ..
+```bash
+cd frontend && npm install && npm run build && cd ..
 mvn -DskipTests package
 java -jar start/shiyi-memo-1.0.0.jar
 ```
 
-也可以在项目根目录直接执行：
+Windows 也可以用一条脚本完成同样的三步：
 
 ```powershell
 .\start-windows.ps1
 ```
 
-访问地址：
+启动后访问：
 
-- 用户端：`http://localhost:8080`
-- 后台：`http://localhost:8080/admin`
+- 用户端：<http://localhost:8080>
+- 后台控制台：<http://localhost:8080/admin>
 
-## 开发模式
+## 配置说明
+
+配置写在 `src/main/resources/application-local.yml`（线上为 `start/application-local.yml`）：
+
+| 配置项 | 说明 |
+| --- | --- |
+| `spring.datasource.*` | MySQL 连接 |
+| `spring.mail.*` | 验证码邮件 SMTP |
+| `app.jwt.secret` | 登录令牌密钥，至少 32 字节，公网务必替换 |
+| `app.jwt.secure-cookie` | 启用 HTTPS 后设为 `true` |
+| `app.mail.enabled` | 是否真实发送邮件 |
+| `app.mail.expose-code` | 本地联调时由接口返回验证码，线上必须为 `false` |
+| `app.admin.username/password` | 后台控制台账号，与普通用户无关 |
+| `app.storage.root` | 上传文件目录 |
+| `app.storage.thumbnail-root` | 缩略图目录 |
+| `app.security.allow-register` | 是否允许新邮箱自助注册 |
+
+## 本地开发
 
 ```powershell
 .\dev.ps1
 ```
 
-- 后端：`http://localhost:8080`
-- 前端：`http://localhost:5173`
+脚本会同时拉起后端和前端：
+
+- 后端：<http://localhost:8080>
+- 前端：<http://localhost:5173>（已把 `/api` 代理到后端，支持热更新）
 
 ## 部署
 
-`mvn package` 已经把可执行 jar 输出到 `start/`，`ecosystem.config.js` 的 pm2 应用目录也指向这里：
+`mvn package` 会把可执行 jar 输出到 `start/`，前端产物已经内嵌进 jar，PM2 的应用目录也指向这里：
 
 ```bash
-bash start-linux.sh       # Linux 服务器：前端构建 -> 后端打包 -> pm2 启动 / 重启
-.\start-windows.ps1       # Windows 本地：同样的三步，装了 pm2 就走 pm2，否则直接 java -jar
+bash start-linux.sh       # Linux 服务器：前端构建 → 后端打包 → PM2 启动 / 重启
+.\start-windows.ps1       # Windows：同样的三步；装了 PM2 就走 PM2，否则直接 java -jar
 ```
 
-线上配置 `start/application-local.yml` 由 pm2 通过 `--spring.config.additional-location` 加载，和 jar 放在一起；日志在 `start/logs/`。
+线上配置 `start/application-local.yml` 与 jar 放在一起，由 PM2 通过 `--spring.config.additional-location` 加载；日志输出到 `start/logs/`。
 
-## 主要配置
+> 公网部署前请务必：替换 `app.jwt.secret`、修改后台账号密码，并把 `app.mail.expose-code` 设为 `false`。
 
-配置写在 `src/main/resources/application-local.yml` 中：
-
-| 配置项 | 说明 |
-| --- | --- |
-| `spring.datasource.*` | MySQL 连接 |
-| `spring.mail.*` | 验证码邮件 |
-| `app.jwt.secret` | 登录令牌密钥 |
-| `app.jwt.secure-cookie` | HTTPS 环境设为 `true` |
-| `app.mail.enabled` | 是否真实发送邮件 |
-| `app.mail.expose-code` | 本地联调时返回验证码，线上必须为 `false` |
-| `app.admin.username/password` | 后台登录账号 |
-| `app.storage.root` | 上传文件目录 |
-| `app.storage.thumbnail-root` | 缩略图目录 |
-
-## 数据目录
+## 数据与备份
 
 ```text
 data/
-  uploads/
-  thumbnails/
+  uploads/       上传的原始文件
+  thumbnails/    图片缩略图缓存
+logs/            运行日志
 ```
 
-数据库保存元数据，`data/` 保存文件，两者需要一起备份。
+元数据存在数据库，文件存在 `data/`，备份时两者需要一起保存。用户也可以在个人中心自助导出 / 恢复自己的数据 zip 包。
+
+## 桌面端
+
+`desktop/` 是一个轻量 Electron 外壳，启动后加载站点地址，本身不含业务逻辑——前端改完部署到服务器，桌面端用户无需重新安装即可用上新版本。打包与服务器地址配置见 [desktop/README.md](desktop/README.md)。
+
+## 路线图
+
+- [ ] 笔记版本历史与回收站
+- [ ] 移动端适配与 PWA
+- [ ] 更细粒度的分享权限（只读 / 有效期）
+- [ ] 对象存储（S3 兼容）后端
+
+欢迎在 Issues 里补充你希望看到的能力。
+
+## 贡献
+
+欢迎提交 Issue 和 Pull Request。
+
+1. Fork 本仓库，从 `main` 切出特性分支（建议 `feat/xxx`、`fix/xxx`）
+2. 提交前本地跑通前端 `npm run build` 与后端 `mvn -DskipTests package`
+3. 保持提交信息清晰，PR 描述里说明改动动机与验证方式
+
+## 许可
+
+本项目基于 [MIT License](LICENSE) 开源，Copyright (c) 2026 lieng。
+
+## 致谢
+
+感谢 Vue、Spring Boot、Element Plus、MyBatis-Plus、Flyway 等开源项目。
+
+---
+
+<div align="center">
+<sub>如果拾忆对你有用，欢迎点一个 Star ⭐</sub>
+</div>

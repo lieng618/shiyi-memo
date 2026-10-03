@@ -15,7 +15,7 @@
     <artifactId>shiyi-memo</artifactId>
     <version>1.0.0</version>
     <name>shiyi-memo</name>
-    <description>备忘录 / 文件收集站</description>
+    <description>自托管的 Markdown 笔记与文件库</description>
 
     <properties>
         <java.version>21</java.version>
