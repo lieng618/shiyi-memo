@@ -1,0 +1,365 @@
+// 富文本编辑器样式：结构搬运自 art-design-pro 的 art-wang-editor/style.scss，
+// 颜色换成「拾忆」的主题变量（暗色模式随 html.dark 自动生效），
+// 正文排版对齐 markdown.css，保证编辑时和分享页 / 导出看到的样子一致。
+$box-radius: var(--radius-sm);
+
+/* 编辑器容器 */
+.rich-editor {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+
+  /* wangEditor 主题变量全部映射到站内变量 */
+  --w-e-toolbar-bg-color: var(--panel);
+  --w-e-toolbar-color: var(--text-2);
+  --w-e-toolbar-active-bg-color: var(--panel-hover);
+  --w-e-toolbar-active-color: var(--brand);
+  --w-e-toolbar-border-color: var(--border);
+  --w-e-toolbar-disabled-color: var(--text-3);
+  --w-e-textarea-bg-color: var(--panel);
+  --w-e-textarea-color: var(--text);
+  --w-e-textarea-border-color: var(--border);
+  --w-e-textarea-slight-bg-color: var(--panel-2);
+  --w-e-textarea-slight-color: var(--text-3);
+  --w-e-textarea-slight-border-color: var(--border-strong);
+  --w-e-textarea-selected-border-color: var(--brand-fill);
+  --w-e-textarea-handler-bg-color: var(--brand-fill);
+  --w-e-modal-button-bg-color: var(--panel-hover);
+  --w-e-modal-button-border-color: var(--border-strong);
+
+  /* 工具栏一行：wangEditor 工具栏 + 附件按钮 + 页面插槽（导出等） */
+  .rich-editor-toolbar-row {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: stretch;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .rich-editor-toolbar {
+    flex: 1;
+    min-width: 0;
+
+    &.w-e-toolbar {
+      border-bottom: none;
+      border-radius: $box-radius $box-radius 0 0 !important;
+    }
+  }
+
+  /* 工具栏末尾的自定义按钮（如导出）：尺寸、配色和悬停效果对齐 .w-e-bar-item button */
+  .rich-editor-extras {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    height: 40px;
+    padding: 4px 5px 4px 0;
+
+    button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      height: 32px;
+      min-width: 32px;
+      padding: 0 8px;
+      border: none;
+      border-radius: $box-radius;
+      background: transparent;
+      color: var(--text-2);
+      font-size: 14px;
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s;
+    }
+
+    button:hover:not(:disabled) {
+      background: var(--panel-hover);
+      color: var(--text);
+    }
+
+    button:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+  }
+
+  .menu-item {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+
+    i {
+      margin-right: 5px;
+    }
+  }
+
+  /* 下拉选择框配置 */
+  .w-e-select-list {
+    min-width: 140px;
+    padding: 5px 10px 10px;
+    border-radius: $box-radius;
+  }
+
+  /* 下拉选择框元素配置 */
+  .w-e-select-list ul li {
+    margin-top: 5px;
+    font-size: 15px !important;
+    border-radius: $box-radius;
+  }
+
+  /* 下拉选择框 hover 样式调整 */
+  .w-e-select-list ul li:hover {
+    background-color: var(--panel-hover);
+  }
+
+  /* 工具栏按钮样式 */
+  .w-e-bar-item svg {
+    fill: var(--text-2);
+  }
+
+  .w-e-bar-item button {
+    color: var(--text-2);
+    border-radius: $box-radius;
+  }
+
+  /* 工具栏 hover 按钮背景颜色 */
+  .w-e-bar-item button:hover {
+    background-color: var(--panel-hover);
+  }
+
+  /* 工具栏分割线 */
+  .w-e-bar-divider {
+    height: 20px;
+    margin-top: 10px;
+    background-color: var(--border-strong);
+  }
+
+  /* 工具栏菜单 */
+  .w-e-bar-item-group .w-e-bar-item-menus-container {
+    min-width: 120px;
+    padding: 10px 0;
+    border: none;
+    border-radius: $box-radius;
+
+    .w-e-bar-item {
+      button {
+        width: 100%;
+        margin: 0 5px;
+      }
+    }
+  }
+
+  /* 正文区域：编辑区和分享页共用一套排版观感 */
+  .rich-editor-body {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .w-e-text-container {
+    background: var(--panel);
+  }
+
+  /* 底部留 40vh：长文写作时正文总能滚到视口上部 */
+  [data-slate-editor] {
+    padding: 18px 22px 40vh;
+    font-size: 15px;
+    line-height: 1.75;
+    color: var(--text);
+    word-break: break-word;
+  }
+
+  /* 占位符跟正文内边距对齐 */
+  .w-e-text-placeholder {
+    left: 22px;
+    top: 18px;
+    font-style: normal;
+    color: var(--text-3);
+  }
+
+  [data-slate-editor] {
+    h1,
+    h2,
+    h3,
+    h4,
+    h5 {
+      margin: 1.4em 0 0.6em;
+      font-weight: 700;
+      line-height: 1.35;
+    }
+
+    h1 {
+      font-size: 1.7em;
+    }
+
+    h2 {
+      font-size: 1.4em;
+    }
+
+    h3 {
+      font-size: 1.18em;
+    }
+
+    h4 {
+      font-size: 1em;
+    }
+
+    h5 {
+      font-size: 0.92em;
+    }
+
+    p {
+      margin: 0.7em 0;
+    }
+
+    ul,
+    ol {
+      padding-left: 1.5em;
+      margin: 0.6em 0;
+    }
+
+    li {
+      margin: 0.25em 0;
+    }
+
+    /* 待办复选框跟正文行高对齐 */
+    input[type='checkbox'] {
+      width: 15px;
+      height: 15px;
+      margin: 0 6px 0 0;
+      vertical-align: -2px;
+      accent-color: var(--brand-fill);
+      cursor: pointer;
+    }
+
+    a {
+      color: var(--brand);
+    }
+
+    img {
+      max-width: 100%;
+    }
+
+    table {
+      border-collapse: collapse;
+      margin: 0.8em 0;
+
+      th,
+      td {
+        border: 1px solid var(--border-strong);
+        padding: 6px 10px;
+        min-width: 72px;
+      }
+
+      th {
+        background: var(--panel-2);
+        font-weight: 600;
+      }
+    }
+
+    pre {
+      padding: 14px 16px;
+      border-radius: 12px;
+      background: var(--panel-hover);
+      border: 1px solid var(--border);
+      overflow-x: auto;
+
+      code {
+        padding: 0;
+        background: none;
+        border-radius: 0;
+        font-family: 'JetBrains Mono', Consolas, Monaco, monospace;
+        font-size: 0.88em;
+      }
+    }
+
+    code {
+      padding: 2px 6px;
+      border-radius: 6px;
+      background: var(--panel-hover);
+      font-family: 'JetBrains Mono', Consolas, Monaco, monospace;
+      font-size: 0.88em;
+    }
+
+    blockquote {
+      margin: 0.8em 0;
+      padding: 2px 14px;
+      border-left: 3px solid var(--brand);
+      background: var(--panel-2);
+      border-radius: 0 8px 8px 0;
+      color: var(--text-2);
+    }
+  }
+
+  /* 代码块语言选择等弹层 */
+  .w-e-drop-panel {
+    border: 0;
+    border-radius: $box-radius;
+  }
+
+  /* 输入区域弹出 bar */
+  .w-e-hover-bar {
+    border-radius: $box-radius;
+  }
+
+  /* 超链接弹窗 */
+  .w-e-modal {
+    border: none;
+    border-radius: $box-radius;
+
+    input[type='text'] {
+      background-color: var(--panel-2);
+      border: 1px solid var(--border-strong);
+      border-radius: 6px;
+      color: var(--text);
+      padding: 4.5px 11px;
+    }
+  }
+
+  /* 图片选中态的拖拽手柄用品牌色 */
+  [data-slate-editor] .w-e-selected-image-container {
+    overflow: inherit;
+
+    &:hover {
+      border: 0;
+    }
+
+    img {
+      border: 1px solid transparent;
+      transition: border 0.3s;
+
+      &:hover {
+        border: 1px solid var(--brand-fill) !important;
+      }
+    }
+
+    .w-e-image-dragger {
+      width: 12px;
+      height: 12px;
+      background-color: var(--brand-fill);
+      border: 2px solid var(--panel);
+      border-radius: $box-radius;
+    }
+
+    .left-top {
+      top: -6px;
+      left: -6px;
+    }
+
+    .right-top {
+      top: -6px;
+      right: -6px;
+    }
+
+    .left-bottom {
+      bottom: -6px;
+      left: -6px;
+    }
+
+    .right-bottom {
+      right: -6px;
+      bottom: -6px;
+    }
+  }
+}

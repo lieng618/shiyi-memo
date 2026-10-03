@@ -47,9 +47,9 @@ export const memoApi = {
       })
       .then((r) => r.data),
   get: (id: number) => http.get<MemoDetail>(`/memos/${id}`).then((r) => r.data),
-  create: (payload: { title?: string; contentMd?: string; tagNames?: string[]; pinned?: boolean }) =>
+  create: (payload: { title?: string; contentHtml?: string; tagNames?: string[]; pinned?: boolean }) =>
     http.post<MemoDetail>('/memos', payload).then((r) => r.data),
-  update: (id: number, payload: { title?: string; contentMd?: string; tagNames?: string[]; pinned?: boolean }) =>
+  update: (id: number, payload: { title?: string; contentHtml?: string; tagNames?: string[]; pinned?: boolean }) =>
     http.put<MemoDetail>(`/memos/${id}`, payload).then((r) => r.data),
   pin: (id: number, pinned: boolean) => http.post(`/memos/${id}/pin`, { pinned }).then(() => undefined),
   share: (id: number, enabled = true) =>

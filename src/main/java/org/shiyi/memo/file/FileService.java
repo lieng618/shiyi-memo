@@ -353,8 +353,8 @@ public class FileService {
 
     /** 正文保存后，删除已从 Markdown 中移除的附件，并释放用户空间。 */
     @Transactional
-    public void deleteUnreferenced(long userId, long memoId, String contentMd) {
-        Set<Long> referencedIds = referencedFileIds(contentMd);
+    public void deleteUnreferenced(long userId, long memoId, String contentHtml) {
+        Set<Long> referencedIds = referencedFileIds(contentHtml);
         List<FileAsset> assets = fileMapper.selectList(Wrappers.lambdaQuery(FileAsset.class)
                 .eq(FileAsset::getUserId, userId)
                 .eq(FileAsset::getMemoId, memoId));
@@ -363,12 +363,12 @@ public class FileService {
                 .forEach(this::removeAsset);
     }
 
-    static Set<Long> referencedFileIds(String contentMd) {
+    static Set<Long> referencedFileIds(String contentHtml) {
         Set<Long> ids = new HashSet<>();
-        if (contentMd == null || contentMd.isBlank()) {
+        if (contentHtml == null || contentHtml.isBlank()) {
             return ids;
         }
-        Matcher matcher = FILE_REFERENCE.matcher(contentMd);
+        Matcher matcher = FILE_REFERENCE.matcher(contentHtml);
         while (matcher.find()) {
             try {
                 ids.add(Long.parseLong(matcher.group(1)));

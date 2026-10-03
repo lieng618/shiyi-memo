@@ -65,3 +65,6 @@ tools/extract-copy.mjs
 ### Docker ###
 # docker compose 的真实环境配置(含密钥),仓库里只放 .env.example
 .env
+
+# ZCode 会话本地文件
+.zcode/

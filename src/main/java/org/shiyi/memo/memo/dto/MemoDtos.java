@@ -13,7 +13,7 @@ public final class MemoDtos {
     }
 
     public record MemoRequest(@Size(max = 255) String title,
-                              @Size(max = 500_000) String contentMd,
+                              @Size(max = 500_000) String contentHtml,
                               List<String> tagNames,
                               Boolean pinned) {
     }
@@ -24,7 +24,7 @@ public final class MemoDtos {
                               LocalDateTime createdAt, LocalDateTime updatedAt) {
     }
 
-    public record MemoDetail(Long id, String title, String contentMd, Boolean pinned,
+    public record MemoDetail(Long id, String title, String contentHtml, Boolean pinned,
                              List<TagDtos.TagDto> tags, List<FileDtos.FileDto> files,
                              Boolean shareEnabled, String shareToken,
                              LocalDateTime createdAt, LocalDateTime updatedAt) {
@@ -39,7 +39,7 @@ public final class MemoDtos {
     public record ShareResponse(boolean enabled, String token) {
     }
 
-    public record PublicMemoDetail(Long id, String title, String contentMd, Long ownerId,
+    public record PublicMemoDetail(Long id, String title, String contentHtml, Long ownerId,
                                    String ownerName, String ownerAvatarUrl, boolean friend,
                                    LocalDateTime updatedAt) {
     }

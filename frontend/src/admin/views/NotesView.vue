@@ -140,7 +140,7 @@ async function removeMemo(memo: AdminMemo | AdminMemoDetail) {
           更新于 {{ formatFull(detail.updatedAt) }}
         </div>
         <h3 class="detail-title">{{ detail.title || '无标题' }}</h3>
-        <MarkdownView v-if="detail.contentMd" :content="detail.contentMd" />
+        <MarkdownView v-if="detail.contentHtml" :content="detail.contentHtml" />
         <p v-else class="muted">（没有正文）</p>
 
         <div v-if="detail.files.length" class="detail-files">

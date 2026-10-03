@@ -35,7 +35,7 @@ public final class AdminDtos {
     }
 
     public record AdminMemoDetail(Long id, Long userId, String userEmail, String userNickname, String title,
-                                  String contentMd, List<FileDtos.FileDto> files,
+                                  String contentHtml, List<FileDtos.FileDto> files,
                                   LocalDateTime createdAt, LocalDateTime updatedAt) {
     }
 

@@ -172,7 +172,7 @@ function openChat() {
             <span class="meta-copy">分享 · 更新于 {{ formatFull(detail.updatedAt) }}</span>
           </div>
         </header>
-        <MarkdownView :content="detail.contentMd" :public-token="token" />
+        <MarkdownView :content="detail.contentHtml" :public-token="token" />
       </article>
     </main>
   </div>

@@ -123,7 +123,7 @@ public class BackupService {
             entries.add(new ManifestMemo(
                     memo.getId(),
                     memo.getTitle(),
-                    memo.getContentMd(),
+                    memo.getContentHtml(),
                     Boolean.TRUE.equals(memo.getPinned()),
                     tagNames.getOrDefault(memo.getId(), List.of()),
                     memo.getCreatedAt(),
@@ -219,15 +219,15 @@ public class BackupService {
             Set<String> seenKeys = loadExistingKeys(userId, memos);
             int skippedMemos = 0;
             for (ManifestMemo memo : memos) {
-                String effectiveTitle = MemoService.resolveTitle(memo.title(), memo.contentMd());
-                if (!seenKeys.add(dedupKey(effectiveTitle, memo.contentMd()))) {
+                String effectiveTitle = MemoService.resolveTitle(memo.title(), memo.contentHtml());
+                if (!seenKeys.add(dedupKey(effectiveTitle, memo.contentHtml()))) {
                     skippedMemos++;
                     continue;
                 }
                 Memo entity = new Memo();
                 entity.setUserId(userId);
                 entity.setTitle(effectiveTitle);
-                entity.setContentMd(memo.contentMd() == null ? "" : memo.contentMd());
+                entity.setContentHtml(memo.contentHtml() == null ? "" : memo.contentHtml());
                 boolean pinned = Boolean.TRUE.equals(memo.pinned());
                 entity.setPinned(pinned);
                 entity.setPinnedAt(pinned ? LocalDateTime.now() : null);
@@ -268,13 +268,13 @@ public class BackupService {
                 if (entity == null) {
                     continue;
                 }
-                String remapped = remapFileIds(entity.getContentMd(), fileIdMap);
-                if (!remapped.equals(entity.getContentMd())) {
+                String remapped = remapFileIds(entity.getContentHtml(), fileIdMap);
+                if (!remapped.equals(entity.getContentHtml())) {
                     Memo patch = new Memo();
                     patch.setId(entity.getId());
-                    patch.setContentMd(remapped);
+                    patch.setContentHtml(remapped);
                     memoMapper.updateById(patch);
-                    entity.setContentMd(remapped);
+                    entity.setContentHtml(remapped);
                 }
                 tagMapper.unlinkAll(entity.getId());
                 List<Long> tagIds = tagService.resolveByNames(userId, memo.tags())
@@ -353,29 +353,29 @@ public class BackupService {
      */
     private Set<String> loadExistingKeys(long userId, List<ManifestMemo> memos) {
         Set<String> titles = memos.stream()
-                .map(memo -> MemoService.resolveTitle(memo.title(), memo.contentMd()))
+                .map(memo -> MemoService.resolveTitle(memo.title(), memo.contentHtml()))
                 .collect(Collectors.toSet());
         if (titles.isEmpty()) {
             return new HashSet<>();
         }
         // 只取同题的已有笔记做比对，避免把整个账号的正文载进内存
         List<Memo> existing = memoMapper.selectList(Wrappers.lambdaQuery(Memo.class)
-                .select(Memo::getId, Memo::getTitle, Memo::getContentMd)
+                .select(Memo::getId, Memo::getTitle, Memo::getContentHtml)
                 .eq(Memo::getUserId, userId)
                 .in(Memo::getTitle, titles));
         return existing.stream()
-                .map(memo -> dedupKey(memo.getTitle(), memo.getContentMd()))
+                .map(memo -> dedupKey(memo.getTitle(), memo.getContentHtml()))
                 .collect(Collectors.toCollection(HashSet::new));
     }
 
-    static String dedupKey(String title, String contentMd) {
+    static String dedupKey(String title, String contentHtml) {
         String normalizedTitle = title == null ? "" : title.trim();
-        String content = contentMd == null ? "" : contentMd;
+        String content = contentHtml == null ? "" : contentHtml;
         return normalizedTitle + "\n" + FILE_REFERENCE.matcher(content).replaceAll("$1#");
     }
 
-    static String remapFileIds(String contentMd, Map<Long, Long> idMap) {
-        String source = contentMd == null ? "" : contentMd;
+    static String remapFileIds(String contentHtml, Map<Long, Long> idMap) {
+        String source = contentHtml == null ? "" : contentHtml;
         if (source.isBlank() || idMap.isEmpty()) {
             return source;
         }

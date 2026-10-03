@@ -46,7 +46,7 @@ export interface AdminMemoDetail {
   userEmail?: string | null
   userNickname?: string | null
   title: string
-  contentMd: string
+  contentHtml: string
   files: AdminFileItem[]
   createdAt: string
   updatedAt: string

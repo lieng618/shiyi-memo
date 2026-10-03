@@ -56,7 +56,7 @@ public class MemoService {
         var wrapper = Wrappers.lambdaQuery(Memo.class).eq(Memo::getUserId, userId);
         if (StringUtils.hasText(keyword)) {
             String kw = keyword.trim();
-            wrapper.and(q -> q.like(Memo::getTitle, kw).or().like(Memo::getContentMd, kw));
+            wrapper.and(q -> q.like(Memo::getTitle, kw).or().like(Memo::getContentHtml, kw));
         }
         if (pinned != null) {
             wrapper.eq(Memo::getPinned, pinned);
@@ -81,7 +81,7 @@ public class MemoService {
 
         List<MemoDtos.MemoSummary> records = memos.stream()
                 .map(memo -> new MemoDtos.MemoSummary(memo.getId(), memo.getTitle(),
-                        excerpt(memo.getContentMd()),
+                        excerpt(memo.getContentHtml()),
                         Boolean.TRUE.equals(memo.getPinned()),
                         tagMap.getOrDefault(memo.getId(), List.of()),
                         fileCounts.getOrDefault(memo.getId(), 0L),
@@ -97,7 +97,7 @@ public class MemoService {
         Memo memo = requireOwned(userId, memoId);
         List<TagDtos.TagDto> tags = tagsOf(List.of(memoId), userId).getOrDefault(memoId, List.of());
         List<FileDtos.FileDto> files = fileService.listByMemo(userId, memoId);
-        return new MemoDtos.MemoDetail(memo.getId(), memo.getTitle(), memo.getContentMd(),
+        return new MemoDtos.MemoDetail(memo.getId(), memo.getTitle(), memo.getContentHtml(),
                 Boolean.TRUE.equals(memo.getPinned()), tags, files,
                 Boolean.TRUE.equals(memo.getShareEnabled()), memo.getShareToken(),
                 memo.getCreatedAt(), memo.getUpdatedAt());
@@ -107,8 +107,8 @@ public class MemoService {
     public MemoDtos.MemoDetail create(long userId, MemoDtos.MemoRequest request) {
         Memo memo = new Memo();
         memo.setUserId(userId);
-        memo.setContentMd(request.contentMd() == null ? "" : request.contentMd());
-        memo.setTitle(resolveTitle(request.title(), memo.getContentMd()));
+        memo.setContentHtml(request.contentHtml() == null ? "" : request.contentHtml());
+        memo.setTitle(resolveTitle(request.title(), memo.getContentHtml()));
         boolean pinned = Boolean.TRUE.equals(request.pinned());
         memo.setPinned(pinned);
         memo.setPinnedAt(pinned ? LocalDateTime.now() : null);
@@ -120,13 +120,13 @@ public class MemoService {
     @Transactional
     public MemoDtos.MemoDetail update(long userId, long memoId, MemoDtos.MemoRequest request) {
         Memo memo = requireOwned(userId, memoId);
-        String content = request.contentMd();
+        String content = request.contentHtml();
         Memo patch = new Memo();
         patch.setId(memo.getId());
         if (content != null) {
-            patch.setContentMd(content);
+            patch.setContentHtml(content);
         }
-        patch.setTitle(resolveTitle(request.title(), content != null ? content : memo.getContentMd()));
+        patch.setTitle(resolveTitle(request.title(), content != null ? content : memo.getContentHtml()));
         if (request.pinned() != null) {
             boolean pinned = request.pinned();
             patch.setPinned(pinned);
@@ -196,7 +196,7 @@ public class MemoService {
         FileAsset avatar = fileService.publicAvatar(owner);
         AuthUser viewer = AuthContext.get();
         boolean friend = viewer != null && friendService.isFriend(viewer.id(), owner.getId());
-        return new MemoDtos.PublicMemoDetail(memo.getId(), memo.getTitle(), memo.getContentMd(),
+        return new MemoDtos.PublicMemoDetail(memo.getId(), memo.getTitle(), memo.getContentHtml(),
                 owner.getId(), owner.getNickname(), ownerAvatarUrl(token, avatar), friend,
                 memo.getUpdatedAt());
     }
@@ -301,17 +301,19 @@ public class MemoService {
     }
 
     /**
-     * 标题留空时，取正文第一行非空内容当标题。
+     * 标题留空时，取正文第一段文字当标题。
      */
-    public static String resolveTitle(String title, String contentMd) {
+    public static String resolveTitle(String title, String contentHtml) {
         if (StringUtils.hasText(title)) {
             return title.trim().length() > 255 ? title.trim().substring(0, 255) : title.trim();
         }
-        if (!StringUtils.hasText(contentMd)) {
+        if (!StringUtils.hasText(contentHtml)) {
             return "无标题";
         }
-        for (String line : contentMd.split("\\R")) {
-            String clean = line.replaceAll("^[#>*\\-\\s]+", "").trim();
+        // 去掉标签和实体，只留纯文本；行内样式的 span 也会被剥掉
+        String text = stripHtml(contentHtml);
+        for (String line : text.split("\\R")) {
+            String clean = line.trim();
             if (!clean.isEmpty()) {
                 return clean.length() > 60 ? clean.substring(0, 60) : clean;
             }
@@ -320,22 +322,28 @@ public class MemoService {
     }
 
     /**
-     * 列表摘要：粗略去掉 Markdown 记号，只保留纯文本前 140 个字。
+     * 列表摘要：剥掉 HTML 标签只保留纯文本前 140 个字。
      */
-    public static String excerpt(String contentMd) {
-        if (!StringUtils.hasText(contentMd)) {
+    public static String excerpt(String contentHtml) {
+        if (!StringUtils.hasText(contentHtml)) {
             return "";
         }
-        String text = contentMd
-                .replaceAll("(?s)```.*?```", " ")
-                .replaceAll("!\\[[^]]*]\\([^)]*\\)", " ")
-                .replaceAll("\\[([^]]*)]\\([^)]*\\)", "$1")
-                .replaceAll("(?m)^\\s{0,3}#{1,6}\\s*", "")
-                // 列表 / 待办的记号去掉，摘要里只留文字
-                .replaceAll("(?m)^\\s{0,3}(?:[-*+]|\\d+[.)])\\s+(?:\\[[ xX]]\\s*)?", "")
-                .replaceAll("[*_`>~]", "")
-                .replaceAll("\\s+", " ")
-                .trim();
+        String text = stripHtml(contentHtml).replaceAll("\\s+", " ").trim();
         return text.length() > 140 ? text.substring(0, 140) + "…" : text;
+    }
+
+    /** 去掉 HTML 标签并还原常见实体，剩下的就是纯文本 */
+    private static String stripHtml(String html) {
+        return html
+                // 块级标签换成换行，避免相邻段落的文字粘在一起
+                .replaceAll("(?i)</(?:p|div|h[1-6]|li|blockquote|pre|tr)>", "\n")
+                .replaceAll("(?i)<br\\s*/?>", "\n")
+                .replaceAll("(?s)<[^>]*>", "")
+                .replace("&amp;", "&")
+                .replace("&lt;", "<")
+                .replace("&gt;", ">")
+                .replace("&quot;", "\"")
+                .replace("&#39;", "'")
+                .replace("&nbsp;", " ");
     }
 }

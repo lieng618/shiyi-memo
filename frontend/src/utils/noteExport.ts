@@ -1,13 +1,14 @@
 import { ElMessage } from 'element-plus'
 import markdownCss from '@/styles/markdown.css?raw'
-import { renderMarkdown } from '@/utils/markdown'
+import { sanitizeRichText } from '@/utils/richText'
+import { htmlToMarkdown } from '@/utils/htmlToMarkdown'
 import { downloadBlob } from '@/utils/download'
 
 export type ExportFormat = 'md' | 'html' | 'doc' | 'pdf' | 'png'
 
 export interface ExportableNote {
   title: string
-  contentMd: string
+  contentHtml: string
 }
 
 /** 站内图片内联进导出文件的上限，超过的退回绝对链接（需要服务器可达才能看到） */
@@ -54,9 +55,9 @@ export async function exportNote(format: ExportFormat, note: ExportableNote) {
 /* ---------------------------------------------------------------------- Markdown */
 
 function exportMarkdown(note: ExportableNote, base: string) {
-  let md = note.contentMd ?? ''
+  let md = htmlToMarkdown(sanitizeRichText(note.contentHtml ?? ''))
   // 标题不补进正文的话，单独打开导出的文件就没有名字了
-  if (note.title.trim() && !/^\s*#\s/.test(md)) {
+  if (note.title.trim() && !/^#\s/.test(md)) {
     md = `# ${note.title.trim()}\n\n${md}`
   }
   downloadBlob(`${base}.md`, new Blob([md], { type: 'text/markdown;charset=utf-8' }))
@@ -70,7 +71,7 @@ function exportMarkdown(note: ExportableNote, base: string) {
  * 断网也能打开。视频等大附件保留指向服务器的绝对链接。
  */
 async function buildStandaloneHtml(note: ExportableNote): Promise<string> {
-  const rendered = await inlineAssets(renderMarkdown(note.contentMd))
+  const rendered = await inlineAssets(sanitizeRichText(note.contentHtml))
   const title = note.title.trim() || '无标题'
   const today = new Date().toLocaleDateString('zh-CN')
   return `<!doctype html>
@@ -150,7 +151,7 @@ function blobToDataUrl(blob: Blob): Promise<string> {
  * 渲染和图片内联管线照旧。
  */
 async function exportWord(note: ExportableNote): Promise<Blob> {
-  const rendered = await inlineAssets(renderMarkdown(note.contentMd))
+  const rendered = await inlineAssets(sanitizeRichText(note.contentHtml))
   const title = note.title.trim() || '无标题'
   const today = new Date().toLocaleDateString('zh-CN')
   const html = `<!doctype html>
@@ -288,7 +289,7 @@ function mountSheet(note: ExportableNote): { node: HTMLElement; cleanup: () => v
     <div class="export-sheet">
       <h1 class="export-sheet-title">${title}</h1>
       <p class="export-sheet-meta">导出自「拾忆」 · ${today}</p>
-      <div class="markdown-body">${renderMarkdown(note.contentMd)}</div>
+      <div class="markdown-body">${sanitizeRichText(note.contentHtml)}</div>
     </div>`
   document.body.appendChild(host)
   const node = host.querySelector<HTMLElement>('.export-sheet')

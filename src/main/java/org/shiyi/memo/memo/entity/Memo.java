@@ -16,8 +16,8 @@ public class Memo {
 
     private Long userId;
     private String title;
-    /** Markdown 原文 */
-    private String contentMd;
+    /** 富文本 HTML（wangEditor） */
+    private String contentHtml;
     private Boolean pinned;
     private LocalDateTime pinnedAt;
     private String shareToken;

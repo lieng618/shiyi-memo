@@ -220,7 +220,7 @@ public class AdminService {
         var wrapper = Wrappers.lambdaQuery(Memo.class);
         if (StringUtils.hasText(keyword)) {
             String kw = keyword.trim();
-            wrapper.and(q -> q.like(Memo::getTitle, kw).or().like(Memo::getContentMd, kw));
+            wrapper.and(q -> q.like(Memo::getTitle, kw).or().like(Memo::getContentHtml, kw));
         }
         wrapper.eq(userId != null, Memo::getUserId, userId).orderByDesc(Memo::getId);
 
@@ -238,7 +238,7 @@ public class AdminService {
                     return new AdminDtos.AdminMemoDto(memo.getId(), memo.getUserId(),
                             owner == null ? null : owner.getEmail(),
                             owner == null ? null : owner.getNickname(),
-                            memo.getTitle(), MemoService.excerpt(memo.getContentMd()),
+                            memo.getTitle(), MemoService.excerpt(memo.getContentHtml()),
                             Boolean.TRUE.equals(memo.getPinned()),
                             fileCounts.getOrDefault(memo.getId(), 0L),
                             memo.getCreatedAt(), memo.getUpdatedAt());
@@ -257,7 +257,7 @@ public class AdminService {
         return new AdminDtos.AdminMemoDetail(memo.getId(), memo.getUserId(),
                 owner == null ? null : owner.getEmail(),
                 owner == null ? null : owner.getNickname(),
-                memo.getTitle(), memo.getContentMd(), files, memo.getCreatedAt(), memo.getUpdatedAt());
+                memo.getTitle(), memo.getContentHtml(), files, memo.getCreatedAt(), memo.getUpdatedAt());
     }
 
     /** 删除违规笔记，并给作者发一封站内信说明 */

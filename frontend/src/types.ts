@@ -66,7 +66,7 @@ export interface MemoSummary {
 export interface MemoDetail {
   id: number
   title: string
-  contentMd: string
+  contentHtml: string
   pinned: boolean
   shareEnabled: boolean
   shareToken?: string | null
@@ -79,7 +79,7 @@ export interface MemoDetail {
 export interface PublicMemoDetail {
   id: number
   title: string
-  contentMd: string
+  contentHtml: string
   ownerId: number
   ownerName: string
   ownerAvatarUrl?: string | null

@@ -6,7 +6,7 @@ import { memoApi } from '@/api'
 export function useCreateNote() {
   const router = useRouter()
   return async function createNote() {
-    const created = await memoApi.create({ title: '', contentMd: '' })
+    const created = await memoApi.create({ title: '', contentHtml: '' })
     ElMessage.success('已新建笔记')
     await router.push(`/notes/${created.id}`)
     return created

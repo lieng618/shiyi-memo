@@ -24,7 +24,7 @@ public final class BackupDtos {
                                  List<ManifestMemo> memos) {
 
         @JsonIgnoreProperties(ignoreUnknown = true)
-        public record ManifestMemo(Long id, String title, String contentMd, Boolean pinned,
+        public record ManifestMemo(Long id, String title, String contentHtml, Boolean pinned,
                                    List<String> tags, LocalDateTime createdAt, LocalDateTime updatedAt,
                                    List<ManifestFile> attachments) {
         }

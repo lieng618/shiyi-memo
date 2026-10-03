@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { renderMarkdown } from '@/utils/markdown'
+import { sanitizeRichText } from '@/utils/richText'
 
 const props = defineProps<{ content?: string | null; publicToken?: string | null }>()
 
 const html = computed(() => {
-  const rendered = renderMarkdown(props.content ?? '')
+  const rendered = sanitizeRichText(props.content ?? '')
   return props.publicToken ? rewritePublicAssets(rendered, props.publicToken) : rendered
 })
 
