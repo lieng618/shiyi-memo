@@ -312,38 +312,45 @@ async function toggleShare(value: string | number | boolean) {
                 </span>
               </button>
 
-              <button
-                type="button"
-                class="row-action share-btn"
-                :class="{ on: note.shareEnabled }"
-                :aria-label="`分享 ${note.title || '无标题'}`"
-                :title="note.shareEnabled ? '管理分享' : '分享'"
-                :disabled="shareLoading"
-                @click.stop="openShare(note)"
-              >
-                <el-icon><Link /></el-icon>
-              </button>
+              <!-- 提示用 el-tooltip 而不是原生 title：原生 title 要悬停约 1 秒才出现，
+                   el-tooltip show-after=0 一悬停就出来，和编辑器工具栏的提示同速。
+                   弹层挂到 body，也不会被 .note-row 的 overflow:hidden 裁掉 -->
+              <el-tooltip content="分享" placement="top" :show-after="0">
+                <button
+                  type="button"
+                  class="row-action share-btn"
+                  :class="{ on: note.shareEnabled }"
+                  :aria-label="`分享 ${note.title || '无标题'}`"
+                  :disabled="shareLoading"
+                  @click.stop="openShare(note)"
+                >
+                  <el-icon><Link /></el-icon>
+                </button>
+              </el-tooltip>
 
-              <button
-                type="button"
-                class="pin-btn"
-                :class="{ on: note.pinned }"
-                :aria-label="note.pinned ? `取消置顶 ${note.title || '无标题'}` : `置顶 ${note.title || '无标题'}`"
-                :aria-pressed="note.pinned"
-                @click.stop="togglePin(note)"
-              >
-                <el-icon><StarFilled v-if="note.pinned" /><Star v-else /></el-icon>
-              </button>
+              <el-tooltip :content="note.pinned ? '取消置顶' : '置顶'" placement="top" :show-after="0">
+                <button
+                  type="button"
+                  class="pin-btn"
+                  :class="{ on: note.pinned }"
+                  :aria-label="note.pinned ? `取消置顶 ${note.title || '无标题'}` : `置顶 ${note.title || '无标题'}`"
+                  :aria-pressed="note.pinned"
+                  @click.stop="togglePin(note)"
+                >
+                  <el-icon><StarFilled v-if="note.pinned" /><Star v-else /></el-icon>
+                </button>
+              </el-tooltip>
 
-              <button
-                type="button"
-                class="row-action danger-btn"
-                :aria-label="`删除 ${note.title || '无标题'}`"
-                title="删除"
-                @click.stop="removeNote(note)"
-              >
-                <el-icon><Delete /></el-icon>
-              </button>
+              <el-tooltip content="删除" placement="top" :show-after="0">
+                <button
+                  type="button"
+                  class="row-action danger-btn"
+                  :aria-label="`删除 ${note.title || '无标题'}`"
+                  @click.stop="removeNote(note)"
+                >
+                  <el-icon><Delete /></el-icon>
+                </button>
+              </el-tooltip>
             </article>
           </li>
         </transition-group>
