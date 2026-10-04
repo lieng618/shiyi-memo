@@ -322,8 +322,22 @@ public class AdminService {
     @Transactional
     public void sendMessage(AdminDtos.SendMessageRequest request, String adminName) {
         userService.get(request.userId());
-        messageService.send(request.userId(), request.title().trim(), request.content().trim(),
-                MessageService.TYPE_NOTICE, null, null, adminName);
+        messageService.sendRich(request.userId(), request.title().trim(), request.contentHtml(), adminName);
+    }
+
+    /**
+     * 全服信：全体正常状态用户每人一条（各自独立的已读状态，未读角标随之 +1）。
+     * 用户量级是个人的备忘录应用，事务内逐条插入即可；将来量大了再换批量 INSERT。
+     */
+    @Transactional
+    public void broadcast(AdminDtos.BroadcastMessageRequest request, String adminName) {
+        List<Long> userIds = userMapper.selectList(Wrappers.lambdaQuery(AppUser.class)
+                        .select(AppUser::getId)
+                        .and(w -> w.eq(AppUser::getStatus, 1).or().isNull(AppUser::getStatus)))
+                .stream().map(AppUser::getId).toList();
+        for (Long userId : userIds) {
+            messageService.sendRich(userId, request.title().trim(), request.contentHtml(), adminName);
+        }
     }
 
     public PageResult<AdminDtos.AdminMessageDto> listMessages(Long userId, long page, long size) {

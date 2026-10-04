@@ -5,6 +5,7 @@ import lombok.RequiredArgsConstructor;
 import org.shiyi.memo.admin.dto.AdminDtos;
 import org.shiyi.memo.common.PageResult;
 import org.shiyi.memo.file.FileService;
+import org.shiyi.memo.file.dto.FileDtos;
 import org.shiyi.memo.file.entity.FileAsset;
 import org.shiyi.memo.security.AdminContext;
 import org.shiyi.memo.user.dto.UserDtos;
@@ -23,6 +24,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.nio.file.Path;
 import java.time.Duration;
@@ -108,6 +110,12 @@ public class AdminController {
 
     // ---------------- 文件 ----------------
 
+    /** 后台上传信件附件：图片插正文、其他文件插附件链接；归属系统，不占任何用户配额 */
+    @PostMapping("/files/upload")
+    public FileDtos.FileDto uploadFile(@RequestParam("file") MultipartFile file) {
+        return fileService.uploadSystemFile(file);
+    }
+
     @GetMapping("/files")
     public PageResult<AdminDtos.AdminFileDto> files(@RequestParam(required = false) String keyword,
                                                     @RequestParam(required = false) Long userId,
@@ -168,6 +176,12 @@ public class AdminController {
     @PostMapping("/messages")
     public void sendMessage(@Valid @RequestBody AdminDtos.SendMessageRequest request) {
         adminService.sendMessage(request, AdminContext.get());
+    }
+
+    /** 全服信：发给全体正常状态用户，每人一条 */
+    @PostMapping("/messages/broadcast")
+    public void broadcastMessage(@Valid @RequestBody AdminDtos.BroadcastMessageRequest request) {
+        adminService.broadcast(request, AdminContext.get());
     }
 
     private static MediaType mediaTypeOf(FileAsset asset) {

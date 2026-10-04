@@ -40,6 +40,11 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/views/MessagesView.vue'),
   },
   {
+    path: '/messages/:id(\\d+)',
+    name: 'message-detail',
+    component: () => import('@/views/MessageDetailView.vue'),
+  },
+  {
     path: '/friends',
     name: 'friends',
     component: () => import('@/views/FriendsView.vue'),

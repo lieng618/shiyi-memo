@@ -1,13 +1,20 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { sanitizeRichText } from '@/utils/richText'
+import { useImageLightbox } from '@/composables/useImageLightbox'
 
 const props = defineProps<{ content?: string | null; publicToken?: string | null }>()
+
+const containerRef = ref<HTMLElement | null>(null)
+const { viewerVisible, viewerUrls, viewerIndex, attach } = useImageLightbox()
 
 const html = computed(() => {
   const rendered = sanitizeRichText(props.content ?? '')
   return props.publicToken ? rewritePublicAssets(rendered, props.publicToken) : rendered
 })
+
+// v-html 里的 DOM Vue 不接管，渲染后给图片挂上点开看大图
+watch(html, () => nextTick(() => attach(containerRef.value)), { immediate: true })
 
 function rewritePublicAssets(html: string, token: string) {
   const documentFragment = new DOMParser().parseFromString(html, 'text/html')
@@ -30,5 +37,17 @@ function rewritePublicAssets(html: string, token: string) {
 </script>
 
 <template>
-  <div class="markdown-body" v-html="html" />
+  <div ref="containerRef" class="markdown-body rich-view" v-html="html" />
+  <el-image-viewer
+    v-if="viewerVisible"
+    :url-list="viewerUrls"
+    :initial-index="viewerIndex"
+    @close="viewerVisible = false"
+  />
 </template>
+
+<style scoped>
+.rich-view :deep(img) {
+  cursor: zoom-in;
+}
+</style>

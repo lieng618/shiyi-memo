@@ -6,6 +6,7 @@ import type {
   AdminMemoDetail,
   AdminMessage,
   AdminStats,
+  AdminUploadFile,
   AdminUser,
   LevelPayload,
   PageResult,
@@ -44,6 +45,24 @@ export const adminApi = {
 
   messages: (params: { userId?: number; page?: number; size?: number }) =>
     adminHttp.get<PageResult<AdminMessage>>('/messages', { params }).then((r) => r.data),
-  sendMessage: (payload: { userId: number; title: string; content: string }) =>
+  sendMessage: (payload: { userId: number; title: string; contentHtml: string }) =>
     adminHttp.post('/messages', payload).then(() => undefined),
+  /** 全服信：发给全体正常状态用户 */
+  broadcast: (payload: { title: string; contentHtml: string }) =>
+    adminHttp.post('/messages/broadcast', payload).then(() => undefined),
+  /** 上传信件附件（图片/文件），归属系统，不占用户配额 */
+  uploadAttachment: (file: File, onProgress?: (percent: number) => void) => {
+    const form = new FormData()
+    form.append('file', file)
+    return adminHttp
+      .post<AdminUploadFile>('/files/upload', form, {
+        timeout: 0,
+        onUploadProgress: (event) => {
+          if (onProgress && event.total) {
+            onProgress(Math.round((event.loaded / event.total) * 100))
+          }
+        },
+      })
+      .then((r) => r.data)
+  },
 }

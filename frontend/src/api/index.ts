@@ -138,6 +138,7 @@ async function readErrorMessage(res: Response): Promise<string> {
 export const messageApi = {
   list: (params: { page?: number; size?: number } = {}) =>
     http.get<PageResult<UserMessage>>('/messages', { params }).then((r) => r.data),
+  detail: (id: number) => http.get<UserMessage>(`/messages/${id}`).then((r) => r.data),
   unreadCount: () => http.get<{ count: number }>('/messages/unread-count').then((r) => r.data.count),
   markRead: (ids?: number[]) =>
     http.post<{ count: number }>('/messages/read', { ids: ids ?? null }).then((r) => r.data.count),

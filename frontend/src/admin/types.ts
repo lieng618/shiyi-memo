@@ -88,6 +88,16 @@ export interface AdminMessage {
   createdAt: string
 }
 
+/** 后台上传信件附件的返回（FileDto 的子集，够编辑器插图/插附件用） */
+export interface AdminUploadFile {
+  id: number
+  originalName: string
+  size: number
+  kind: 'image' | 'video' | 'audio' | 'other'
+  url: string
+  thumbUrl?: string | null
+}
+
 export interface AdminStats {
   userCount: number
   memoCount: number

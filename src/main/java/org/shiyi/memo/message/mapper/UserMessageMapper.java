@@ -30,4 +30,12 @@ public interface UserMessageMapper extends BaseMapper<UserMessage> {
             + "<foreach collection='userIds' item='id' open='(' separator=',' close=')'>#{id}</foreach> "
             + "GROUP BY user_id</script>")
     List<Map<String, Object>> countByUserIds(@Param("userIds") Collection<Long> userIds);
+
+    /**
+     * 站内信附件授权：收到的消息正文（内嵌图片 / 附件链接）里引用了这个文件即可读。
+     * 路径两端的 / 保证按完整 id 匹配，不会误命中 /api/files/12/ 里的 1。
+     */
+    @Select("SELECT COUNT(*) FROM user_message "
+            + "WHERE user_id = #{userId} AND content_html LIKE CONCAT('%/api/files/', #{fileId}, '/%')")
+    long countReadableFileMessage(@Param("userId") long userId, @Param("fileId") long fileId);
 }

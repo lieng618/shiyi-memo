@@ -49,7 +49,11 @@ public final class AdminDtos {
 
     public record SendMessageRequest(@NotNull Long userId,
                                      @NotBlank @Size(max = 128) String title,
-                                     @NotBlank @Size(max = 2000) String content) {
+                                     @NotBlank @Size(max = 60000) String contentHtml) {
+    }
+
+    public record BroadcastMessageRequest(@NotBlank @Size(max = 128) String title,
+                                          @NotBlank @Size(max = 60000) String contentHtml) {
     }
 
     public record AdminMessageDto(Long id, Long userId, String userEmail, String userNickname,

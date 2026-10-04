@@ -5,6 +5,7 @@ import org.shiyi.memo.common.PageResult;
 import org.shiyi.memo.message.dto.MessageDtos;
 import org.shiyi.memo.security.AuthContext;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -26,6 +27,12 @@ public class MessageController {
                                                    @RequestParam(defaultValue = "20") long size) {
         return messageService.list(AuthContext.requireUserId(),
                 Math.max(1, page), Math.min(Math.max(1, size), 100));
+    }
+
+    /** 单条消息详情（详情页用；是否已读由前端在进入详情后另行标记） */
+    @GetMapping("/{id}")
+    public MessageDtos.MessageDto detail(@PathVariable long id) {
+        return messageService.detail(AuthContext.requireUserId(), id);
     }
 
     @GetMapping("/unread-count")

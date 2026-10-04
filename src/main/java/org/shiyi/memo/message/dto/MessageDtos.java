@@ -10,13 +10,13 @@ public final class MessageDtos {
     private MessageDtos() {
     }
 
-    public record MessageDto(Long id, String title, String content, String type,
+    public record MessageDto(Long id, String title, String content, String contentHtml, String type,
                              Long refMemoId, Long refFileId, String senderName,
                              LocalDateTime readAt, LocalDateTime createdAt) {
 
         public static MessageDto from(UserMessage message) {
-            return new MessageDto(message.getId(), message.getTitle(), message.getContent(), message.getType(),
-                    message.getRefMemoId(), message.getRefFileId(), message.getSenderName(),
+            return new MessageDto(message.getId(), message.getTitle(), message.getContent(), message.getContentHtml(),
+                    message.getType(), message.getRefMemoId(), message.getRefFileId(), message.getSenderName(),
                     message.getReadAt(), message.getCreatedAt());
         }
     }

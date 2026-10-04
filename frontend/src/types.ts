@@ -138,6 +138,8 @@ export interface UserMessage {
   id: number
   title: string
   content: string
+  /** 后台富文本通知的正文（wangEditor HTML），系统消息为空 */
+  contentHtml?: string | null
   type: MessageType
   refMemoId?: number | null
   refFileId?: number | null

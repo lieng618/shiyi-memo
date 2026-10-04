@@ -15,6 +15,7 @@ import org.shiyi.memo.file.storage.ThumbnailService;
 import org.shiyi.memo.friend.mapper.ChatMessageMapper;
 import org.shiyi.memo.memo.entity.Memo;
 import org.shiyi.memo.memo.mapper.MemoMapper;
+import org.shiyi.memo.message.mapper.UserMessageMapper;
 import org.shiyi.memo.user.UserService;
 import org.shiyi.memo.user.entity.AppUser;
 import org.shiyi.memo.user.entity.UserLevel;
@@ -57,6 +58,7 @@ public class FileService {
     private final FileAssetMapper fileMapper;
     private final MemoMapper memoMapper;
     private final ChatMessageMapper chatMessageMapper;
+    private final UserMessageMapper messageMapper;
     private final UserService userService;
     private final FileStorageService storage;
     private final ThumbnailService thumbnails;
@@ -135,6 +137,68 @@ public class FileService {
         }
         log.info("文件上传成功 user={} fileId={} name={} size={} dedup={}",
                 userId, asset.getId(), originalName, size, twin != null);
+        return FileDtos.FileDto.from(asset);
+    }
+
+    /**
+     * 后台发信附件：归属到系统（userId=0），不走用户配额、不占任何人的空间统计。
+     * 可见性跟着正文走——收信人的 user_message 行里引用了这个文件即可读。
+     */
+    @Transactional
+    public FileDtos.FileDto uploadSystemFile(MultipartFile multipart) {
+        if (multipart == null || multipart.isEmpty()) {
+            throw ApiException.badRequest("请选择要上传的文件");
+        }
+        String originalName = sanitizeName(multipart.getOriginalFilename());
+        String ext = extensionOf(originalName);
+        String mime = detectMime(multipart.getContentType(), ext);
+        String kind = kindOf(mime, ext);
+        String relativePath = buildRelativePath(0, ext);
+
+        String contentHash;
+        String stored;
+        try (InputStream in = multipart.getInputStream()) {
+            DigestInputStream digesting = new DigestInputStream(in, sha256());
+            stored = storage.store(digesting, relativePath);
+            contentHash = HexFormat.of().formatHex(digesting.getMessageDigest().digest());
+        } catch (IOException ex) {
+            log.error("后台附件写入失败 name={}", originalName, ex);
+            throw new ApiException(500, "文件写入失败，请重试");
+        }
+
+        // 系统附件的内容去重独立成组（userId=0），不和任何用户互通
+        FileAsset twin = findContentTwin(0, contentHash);
+        if (twin != null) {
+            storage.delete(stored);
+            stored = twin.getStoragePath();
+        }
+
+        FileAsset asset = new FileAsset();
+        asset.setUserId(0L);
+        asset.setOriginalName(originalName);
+        asset.setExt(ext);
+        asset.setMime(mime);
+        asset.setSize(multipart.getSize());
+        asset.setKind(kind);
+        asset.setStoragePath(stored);
+        asset.setContentHash(contentHash);
+        try {
+            fileMapper.insert(asset);
+        } catch (RuntimeException ex) {
+            if (twin == null) {
+                storage.delete(stored);
+            }
+            throw ex;
+        }
+
+        if (twin != null) {
+            asset.setWidth(twin.getWidth());
+            asset.setHeight(twin.getHeight());
+        } else if ("image".equals(kind)) {
+            probeImageSize(asset);
+        }
+        log.info("后台上传成功 fileId={} name={} size={} dedup={}",
+                asset.getId(), originalName, asset.getSize(), twin != null);
         return FileDtos.FileDto.from(asset);
     }
 
@@ -238,14 +302,15 @@ public class FileService {
     }
 
     /**
-     * 用户读取附件：文件所有者，或者与所有者的会话里真的发过这个文件（聊天收图用）；
-     * 被屏蔽的一律拒绝。
+     * 用户读取附件：文件所有者、与所有者的会话里真的发过这个文件（聊天收图用）、
+     * 或收到的站内信正文里引用了这个文件（后台通知的图片/附件）；被屏蔽的一律拒绝。
      */
     public FileAsset requireReadable(long userId, long fileId) {
         FileAsset asset = fileMapper.selectById(fileId);
         if (asset == null
                 || (!asset.getUserId().equals(userId)
-                && chatMessageMapper.countVisibleFileMessage(userId, asset.getUserId(), fileId) <= 0)) {
+                && chatMessageMapper.countVisibleFileMessage(userId, asset.getUserId(), fileId) <= 0
+                && messageMapper.countReadableFileMessage(userId, fileId) <= 0)) {
             throw ApiException.notFound("文件不存在");
         }
         if (Boolean.TRUE.equals(asset.getBlocked())) {

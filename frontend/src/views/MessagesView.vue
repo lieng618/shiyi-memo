@@ -1,20 +1,22 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { nextTick, onMounted, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { Bell } from '@element-plus/icons-vue'
 import { messageApi } from '@/api'
 import type { UserMessage } from '@/types'
 import { formatFull } from '@/utils/format'
-import { useUnreadMessages } from '@/composables/useUnreadMessages'
+import { sanitizeRichText } from '@/utils/richText'
+import { hydrateMessageAttachments } from '@/utils/messageAttachments'
 import PageHeader from '@/components/PageHeader.vue'
 
 const PAGE_SIZE = 20
 
+const router = useRouter()
 const messages = ref<UserMessage[]>([])
 const total = ref(0)
 const page = ref(1)
 const loading = ref(false)
 const loadingMore = ref(false)
-const { set: setUnread } = useUnreadMessages()
 
 const typeLabels: Record<string, string> = {
   NOTICE: '通知',
@@ -22,16 +24,23 @@ const typeLabels: Record<string, string> = {
   MEMO_REMOVED: '笔记删除',
 }
 
-onMounted(async () => {
-  await load(true)
-  // 打开就算已读，角标随之消失
-  const remaining = await messageApi.markRead()
-  setUnread(remaining)
-  messages.value = messages.value.map((message) => ({
-    ...message,
-    readAt: message.readAt ?? new Date().toISOString(),
-  }))
+const listRef = ref<HTMLElement | null>(null)
+
+onMounted(() => {
+  void load()
+  // 已读改为「点进详情才算」，列表页不再批量标记
 })
+
+// 列表里的富文本是 v-html 预览：附件链接换成展示用的卡片、不挂灯箱，
+// 点图片/附件和点卡片一样都是进详情（水合工具只拦住链接默认跳转，放行冒泡）
+watch(messages, () => nextTick(() => hydrateMessageAttachments(listRef.value, null, { interactive: false })), {
+  deep: true,
+  immediate: true,
+})
+
+function openMessage(id: number) {
+  void router.push(`/messages/${id}`)
+}
 
 async function load(reset = false) {
   if (reset) {
@@ -77,22 +86,34 @@ function loadMore() {
         </div>
 
         <template v-else>
-          <ul class="message-list">
+          <ul ref="listRef" class="message-list">
             <li
               v-for="(message, index) in messages"
               :key="message.id"
               class="message-card stagger-item"
-              :class="{ unread: !message.readAt }"
               :style="{ animationDelay: `${Math.min(index, 10) * 30}ms` }"
+              role="button"
+              tabindex="0"
+              @click="openMessage(message.id)"
+              @keydown.enter="openMessage(message.id)"
             >
               <header class="message-head">
                 <h2>{{ message.title }}</h2>
                 <el-tag size="small" type="info" effect="plain">
                   {{ typeLabels[message.type] ?? '通知' }}
                 </el-tag>
+                <span class="read-state" :class="{ unread: !message.readAt }">
+                  {{ message.readAt ? '已读' : '未读' }}
+                </span>
                 <span class="muted message-time tnum">{{ formatFull(message.createdAt) }}</span>
               </header>
-              <p class="message-content">{{ message.content }}</p>
+              <!-- 列表里只做裁剪预览，点卡片进详情看全文大图 -->
+              <div
+                v-if="message.contentHtml"
+                class="message-rich markdown-body"
+                v-html="sanitizeRichText(message.contentHtml)"
+              />
+              <p v-else class="message-content">{{ message.content }}</p>
               <footer class="message-foot muted">来自 {{ message.senderName }}</footer>
             </li>
           </ul>
@@ -149,10 +170,18 @@ function loadMore() {
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: var(--radius);
+  cursor: pointer;
+  transition: border-color var(--dur) var(--ease-out), box-shadow var(--dur) var(--ease-out);
 }
 
-.message-card.unread {
-  border-left: 3px solid var(--brand-fill);
+.message-card:hover {
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-sm);
+}
+
+.message-card:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
 }
 
 .message-head {
@@ -168,6 +197,16 @@ function loadMore() {
   font-weight: 650;
 }
 
+.read-state {
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.read-state.unread {
+  color: var(--brand-hover);
+  font-weight: 600;
+}
+
 .message-time {
   margin-left: auto;
   font-size: 12.5px;
@@ -178,8 +217,77 @@ function loadMore() {
   color: var(--text-2);
   font-size: 14px;
   line-height: 1.7;
-  white-space: pre-wrap;
   overflow-wrap: anywhere;
+  /* 纯文本预览最多三行 */
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* 列表里的富文本预览：限高裁剪，全文和清晰大图在详情页 */
+.message-rich {
+  margin: var(--space-3) 0 0;
+  max-height: 120px;
+  overflow: hidden;
+  color: var(--text-2);
+  font-size: 14px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+
+.message-rich :deep(img) {
+  border-radius: var(--radius-sm);
+  /* 不设 cursor：跟随整张卡片的手型，点击进详情 */
+}
+
+/* 正文里的附件链接（后台插入的下载链接）渲染成附件卡片 */
+.message-rich :deep(.msg-attachment) {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: var(--space-2) 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--panel-2);
+  color: var(--text-2);
+  font-size: 13px;
+  text-decoration: none;
+  transition: background var(--dur) var(--ease-out), color var(--dur) var(--ease-out);
+}
+
+.message-rich :deep(.msg-attachment:hover) {
+  background: var(--panel-hover);
+  color: var(--text);
+}
+
+.message-rich :deep(.msg-attachment .icon svg),
+.message-rich :deep(.msg-attachment .action svg) {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+}
+
+.message-rich :deep(.msg-attachment .name) {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 550;
+}
+
+.message-rich :deep(.msg-attachment .size) {
+  flex: 0 0 auto;
+  color: var(--text-3);
+  font-size: 12px;
+}
+
+.message-rich :deep(.msg-attachment.dead) {
+  color: var(--text-3);
+  cursor: not-allowed;
 }
 
 .message-foot {

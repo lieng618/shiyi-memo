@@ -17,6 +17,8 @@ public class UserMessage {
     private Long userId;
     private String title;
     private String content;
+    /** 后台富文本通知的正文（wangEditor HTML），系统消息为 null */
+    private String contentHtml;
     /** NOTICE / FILE_BLOCKED / MEMO_REMOVED */
     private String type;
     private Long refMemoId;
