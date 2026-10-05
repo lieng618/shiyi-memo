@@ -135,10 +135,11 @@ $box-radius: var(--radius-sm);
     word-break: break-word;
   }
 
-  /* 占位符跟正文内边距对齐 */
+  /* 占位符跟正文对齐：left 对齐内边距；top 是 18px 内边距加上首段 p 的
+     margin-top（0.7em × 15px = 10.5px），否则提示会悬浮在真实输入行上方 */
   .w-e-text-placeholder {
     left: 22px;
-    top: 18px;
+    top: 28.5px;
     font-style: normal;
     color: var(--text-3);
   }
