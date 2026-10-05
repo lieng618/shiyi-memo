@@ -2,8 +2,8 @@
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { Bell, Edit, Link, User } from '@element-plus/icons-vue'
-import { friendApi } from '@/api'
-import type { FriendNotification } from '@/types'
+import { friendApi, messageApi } from '@/api'
+import type { FriendNotification, UserMessage } from '@/types'
 import { useAuthStore } from '@/stores/auth'
 import { useCreateNote } from '@/composables/useCreateNote'
 import { useFriendSummary } from '@/composables/useFriendSummary'
@@ -26,6 +26,9 @@ const shareOpen = ref(false)
 const friendPreviewOpen = ref(false)
 const friendPreviewLoading = ref(false)
 const friendNotifications = ref<FriendNotification[]>([])
+const messagePreviewOpen = ref(false)
+const messagePreviewLoading = ref(false)
+const unreadMessages = ref<UserMessage[]>([])
 
 let timer: ReturnType<typeof setInterval> | undefined
 let offChat: (() => void) | undefined
@@ -35,6 +38,7 @@ onMounted(() => {
   void refreshUnread()
   void refreshFriendSummary()
   void loadFriendNotifications()
+  void loadUnreadMessages()
   offChat = onRealtime('chat', () => {
     void refreshFriendSummary()
     void loadFriendNotifications(true)
@@ -47,6 +51,7 @@ onMounted(() => {
     void refreshUnread()
     void refreshFriendSummary()
     void loadFriendNotifications(true)
+    void loadUnreadMessages(true)
   }, 60_000)
 })
 
@@ -71,6 +76,30 @@ async function loadFriendNotifications(silent = false) {
 
 function refreshFriendNotifications() {
   void loadFriendNotifications(true)
+}
+
+/** 铃铛预览只看未读；已读的进「查看全部」里翻 */
+async function loadUnreadMessages(silent = false) {
+  if (!silent) {
+    messagePreviewLoading.value = true
+  }
+  try {
+    const result = await messageApi.list({ page: 1, size: 10 })
+    unreadMessages.value = result.records.filter((m) => !m.readAt)
+  } finally {
+    if (!silent) {
+      messagePreviewLoading.value = false
+    }
+  }
+}
+
+function refreshUnreadMessages() {
+  void loadUnreadMessages(true)
+}
+
+async function openMessage(item: UserMessage) {
+  messagePreviewOpen.value = false
+  await router.push(`/messages/${item.id}`)
 }
 
 async function openFriendNotification(item: FriendNotification) {
@@ -135,50 +164,94 @@ async function onNew() {
             </button>
           </template>
 
-          <div class="friend-preview">
-            <header class="friend-preview-head">
+          <div class="header-preview">
+            <header class="header-preview-head">
               <strong>新动态</strong>
               <span class="muted">{{ friendUnread }} 条</span>
             </header>
 
-            <div v-if="friendPreviewLoading && !friendNotifications.length" class="friend-preview-loading">
+            <div v-if="friendPreviewLoading && !friendNotifications.length" class="header-preview-loading">
               <el-skeleton :rows="2" animated />
             </div>
 
-            <div v-else-if="friendNotifications.length" class="friend-preview-list">
+            <div v-else-if="friendNotifications.length" class="header-preview-list">
               <button
                 v-for="item in friendNotifications"
                 :key="`${item.type}-${item.userId}`"
                 type="button"
-                class="friend-preview-item"
+                class="header-preview-item"
                 @click="openFriendNotification(item)"
               >
                 <UserAvatar :user="item" :size="34" />
-                <span class="friend-preview-copy">
+                <span class="header-preview-copy">
                   <strong>{{ item.nickname }}</strong>
                   <span>{{ item.content }}</span>
                 </span>
-                <span class="friend-preview-meta">
+                <span class="header-preview-meta">
                   <span v-if="item.unread" class="preview-count">{{ item.unread }}</span>
                   <time class="tnum">{{ formatFull(item.createdAt) }}</time>
                 </span>
               </button>
             </div>
 
-            <div v-else class="friend-preview-empty">暂无新动态</div>
+            <div v-else class="header-preview-empty">暂无新动态</div>
           </div>
         </el-popover>
-        <button
-          type="button"
-          class="icon-round"
-          title="站内信"
-          :aria-label="unread > 0 ? `站内信，${unread} 条未读` : '站内信'"
-          @click="router.push('/messages')"
+        <el-popover
+          v-model:visible="messagePreviewOpen"
+          trigger="hover"
+          placement="bottom-end"
+          width="320"
+          :show-arrow="false"
+          :disabled="unread === 0"
+          :popper-style="{ padding: '0', borderRadius: '10px', overflow: 'hidden' }"
+          @show="refreshUnreadMessages"
         >
-          <el-badge :value="unread" :hidden="unread === 0" :max="99" class="header-badge">
-            <el-icon :size="18"><Bell /></el-icon>
-          </el-badge>
-        </button>
+          <template #reference>
+            <button
+              type="button"
+              class="icon-round"
+              :aria-label="unread > 0 ? `站内信，${unread} 条未读` : '站内信'"
+              @click="router.push('/messages')"
+            >
+              <el-badge :value="unread" :hidden="unread === 0" :max="99" class="header-badge">
+                <el-icon :size="18"><Bell /></el-icon>
+              </el-badge>
+            </button>
+          </template>
+
+          <div class="header-preview">
+            <header class="header-preview-head">
+              <strong>未读站内信</strong>
+              <span class="muted">{{ unread }} 条</span>
+            </header>
+
+            <div v-if="messagePreviewLoading && !unreadMessages.length" class="header-preview-loading">
+              <el-skeleton :rows="2" animated />
+            </div>
+
+            <div v-else-if="unreadMessages.length" class="header-preview-list">
+              <button
+                v-for="item in unreadMessages"
+                :key="item.id"
+                type="button"
+                class="header-preview-item"
+                @click="openMessage(item)"
+              >
+                <span class="preview-dot" />
+                <span class="header-preview-copy">
+                  <strong>{{ item.title }}</strong>
+                  <span>{{ item.content }}</span>
+                </span>
+                <span class="header-preview-meta">
+                  <time class="tnum">{{ formatFull(item.createdAt) }}</time>
+                </span>
+              </button>
+            </div>
+
+            <div v-else class="header-preview-empty">暂无未读站内信</div>
+          </div>
+        </el-popover>
         <button
           type="button"
           class="icon-round"
@@ -351,11 +424,12 @@ async function onNew() {
   font-variant-numeric: tabular-nums;
 }
 
-.friend-preview {
+/* 顶栏两个悬停预览（好友新动态 / 未读站内信）共用的样式 */
+.header-preview {
   color: var(--text);
 }
 
-.friend-preview-head {
+.header-preview-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -365,18 +439,18 @@ async function onNew() {
   font-size: 13px;
 }
 
-.friend-preview-loading {
+.header-preview-loading {
   padding: var(--space-3);
 }
 
-.friend-preview-list {
+.header-preview-list {
   max-height: 320px;
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
 }
 
-.friend-preview-item {
+.header-preview-item {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -392,12 +466,12 @@ async function onNew() {
   cursor: pointer;
 }
 
-.friend-preview-item:hover,
-.friend-preview-item:focus-visible {
+.header-preview-item:hover,
+.header-preview-item:focus-visible {
   background: var(--panel-2);
 }
 
-.friend-preview-copy {
+.header-preview-copy {
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -405,23 +479,23 @@ async function onNew() {
   min-width: 0;
 }
 
-.friend-preview-copy strong,
-.friend-preview-copy > span {
+.header-preview-copy strong,
+.header-preview-copy > span {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.friend-preview-copy strong {
+.header-preview-copy strong {
   font-size: 13px;
 }
 
-.friend-preview-copy > span {
+.header-preview-copy > span {
   color: var(--text-3);
   font-size: 12px;
 }
 
-.friend-preview-meta {
+.header-preview-meta {
   display: flex;
   align-items: flex-end;
   flex-direction: column;
@@ -429,7 +503,7 @@ async function onNew() {
   flex: 0 0 auto;
 }
 
-.friend-preview-meta time {
+.header-preview-meta time {
   color: var(--text-3);
   font-size: 10.5px;
   white-space: nowrap;
@@ -446,7 +520,16 @@ async function onNew() {
   text-align: center;
 }
 
-.friend-preview-empty {
+/* 站内信一行一条，未读用小圆点标出 */
+.preview-dot {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--danger-fill);
+}
+
+.header-preview-empty {
   padding: var(--space-5) var(--space-3);
   color: var(--text-3);
   font-size: 13px;
