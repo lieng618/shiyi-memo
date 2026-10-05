@@ -146,7 +146,7 @@ mvn -DskipTests package
 java -jar start/shiyi-memo-1.0.0.jar
 ```
 
-Windows 也可以用一条脚本完成同样的三步：
+Windows 双击根目录的 `start-windows.bat`，或在终端执行：
 
 ```powershell
 .\start-windows.ps1
@@ -191,7 +191,7 @@ Windows 也可以用一条脚本完成同样的三步：
 
 ```bash
 bash start-linux.sh       # Linux 服务器：前端构建 → 后端打包 → PM2 启动 / 重启
-.\start-windows.ps1       # Windows：同样的三步；装了 PM2 就走 PM2，否则直接 java -jar
+start-windows.bat         # Windows：双击即可；装了 PM2 就走 PM2，否则直接 java -jar
 ```
 
 线上配置 `start/application-local.yml` 与 jar 放在一起，由 PM2 通过 `--spring.config.additional-location` 加载；日志输出到 `start/logs/`。
