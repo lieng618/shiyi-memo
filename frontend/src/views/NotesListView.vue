@@ -24,6 +24,12 @@ import { useCreateNote } from '@/composables/useCreateNote'
 const PAGE_SIZE = 20
 /** 后端单次最多返回 100 条，静默刷新按这个上限取回已加载的范围 */
 const MAX_PAGE_SIZE = 100
+/**
+ * 列表操作按钮的提示延时。原来设成 0（立刻弹出）是为了摆脱原生 title 那 1 秒等待，
+ * 但鼠标扫过列表时按钮会跟着逐行淡入，提示也就一路弹出来，很吵。
+ * 500ms 是个折中：停留一下才提示，扫过去不会留一串气泡。
+ */
+const TOOLTIP_DELAY = 500
 
 const router = useRouter()
 const createNote = useCreateNote()
@@ -313,9 +319,9 @@ async function toggleShare(value: string | number | boolean) {
               </button>
 
               <!-- 提示用 el-tooltip 而不是原生 title：原生 title 要悬停约 1 秒才出现，
-                   el-tooltip show-after=0 一悬停就出来，和编辑器工具栏的提示同速。
+                   show-after 让它在鼠标停留一下之后再出来，扫过列表时不会连成一片。
                    弹层挂到 body，也不会被 .note-row 的 overflow:hidden 裁掉 -->
-              <el-tooltip content="分享" placement="top" :show-after="0">
+              <el-tooltip content="分享" placement="top" :show-after="TOOLTIP_DELAY">
                 <button
                   type="button"
                   class="row-action share-btn"
@@ -328,7 +334,11 @@ async function toggleShare(value: string | number | boolean) {
                 </button>
               </el-tooltip>
 
-              <el-tooltip :content="note.pinned ? '取消置顶' : '置顶'" placement="top" :show-after="0">
+              <el-tooltip
+                :content="note.pinned ? '取消置顶' : '置顶'"
+                placement="top"
+                :show-after="TOOLTIP_DELAY"
+              >
                 <button
                   type="button"
                   class="pin-btn"
@@ -341,7 +351,7 @@ async function toggleShare(value: string | number | boolean) {
                 </button>
               </el-tooltip>
 
-              <el-tooltip content="删除" placement="top" :show-after="0">
+              <el-tooltip content="删除" placement="top" :show-after="TOOLTIP_DELAY">
                 <button
                   type="button"
                   class="row-action danger-btn"
@@ -624,13 +634,13 @@ async function toggleShare(value: string | number | boolean) {
   background: transparent;
   color: var(--text-3);
   cursor: pointer;
-  opacity: 0;
+  /* 平时半透明常显：让用户知道这里有操作，又不会喧宾夺主 */
+  opacity: 0.5;
   transition: opacity var(--dur) var(--ease-out), background var(--dur) var(--ease-out),
     color var(--dur) var(--ease-out);
 }
 
-/* 悬停 / 键盘聚焦到这一行时才露出操作按钮，平时把版面留给正文。
-   已置顶、已分享的条目保持常显，一眼能看出状态 */
+/* 悬停 / 键盘聚焦到这一行时按到全亮。已置顶、已分享的条目保持满亮，一眼能看出状态 */
 .note-row:hover .pin-btn,
 .note-row:hover .row-action,
 .note-row:focus-within .pin-btn,
@@ -642,7 +652,7 @@ async function toggleShare(value: string | number | boolean) {
   opacity: 1;
 }
 
-/* 触屏没有 hover，操作按钮常显，否则点不到 */
+/* 触屏没有 hover，直接满亮，否则一碰就跳变 */
 @media (hover: none) {
   .pin-btn,
   .row-action {
@@ -664,8 +674,9 @@ async function toggleShare(value: string | number | boolean) {
   color: var(--brand-hover);
 }
 
-.share-btn:disabled {
-  opacity: 0.5;
+/* 分享中要明显比「常显的半透明」更暗，所以带上 .note-row 把优先级提到和悬停态同级 */
+.note-row .share-btn:disabled {
+  opacity: 0.25;
   cursor: wait;
 }
 
