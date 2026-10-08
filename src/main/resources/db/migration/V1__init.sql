@@ -1,5 +1,6 @@
 -- 首次建表：完整最终态 schema。历史增量迁移已合并删除（项目未上线，无需升级路径）。
 -- memo.content_html 存 wangEditor 的富文本 HTML。
+-- user_message.content_html 存后台富文本通知的 HTML，content 保留去标签后的纯文本（列表预览 / 旧数据兼容）。
 
 -- 用户等级：决定总空间上限，可在后台页面调整
 CREATE TABLE user_level
@@ -130,6 +131,7 @@ CREATE TABLE user_message
     user_id        BIGINT       NOT NULL,
     title          VARCHAR(128) NOT NULL,
     content        TEXT         NOT NULL,
+    content_html   MEDIUMTEXT   NULL COMMENT '后台富文本通知正文（wangEditor HTML），系统消息为 NULL',
     type           VARCHAR(32)  NOT NULL DEFAULT 'NOTICE' COMMENT 'NOTICE / FILE_BLOCKED / MEMO_REMOVED',
     ref_memo_id    BIGINT       NULL,
     ref_file_id    BIGINT       NULL,
