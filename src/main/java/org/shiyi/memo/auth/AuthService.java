@@ -24,8 +24,10 @@ import java.time.Duration;
 @RequiredArgsConstructor
 public class AuthService {
 
-    /** 密码登录的所有失败情况都回这一句，避免被拿来猜哪些邮箱注册过 */
-    private static final String BAD_CREDENTIALS = "邮箱或密码不正确（首次使用请用验证码登录）";
+    /** 密码登录失败提示：按邮箱是否存在、是否设过密码分别给出下一步操作 */
+    private static final String EMAIL_NOT_REGISTERED = "此邮箱未注册，用验证码登录会自动注册";
+    private static final String PASSWORD_NOT_SET = "此邮箱未设置登录密码，请用验证码登录后再设置密码";
+    private static final String PASSWORD_WRONG = "密码不正确，请重新输入";
 
     private final EmailCodeService emailCodeService;
     private final PasswordService passwordService;
@@ -68,16 +70,21 @@ public class AuthService {
         }
 
         AppUser user = userService.findByEmail(email);
-        String hash = user == null ? null : user.getPasswordHash();
-        if (hash == null || hash.isBlank()) {
-            // 邮箱不存在 / 还没设过密码：照样走一次哈希校验，然后回同一句话
+        if (user == null) {
+            // 照样走一次哈希校验，耗时和真实校验一致
             passwordService.wasteTime(rawPassword);
-            log.warn("密码登录失败（未设置密码或账号不存在）email={}", email);
-            throw ApiException.unauthorized(BAD_CREDENTIALS);
+            log.warn("密码登录失败（邮箱未注册）email={}", email);
+            throw ApiException.unauthorized(EMAIL_NOT_REGISTERED);
+        }
+        String hash = user.getPasswordHash();
+        if (hash == null || hash.isBlank()) {
+            passwordService.wasteTime(rawPassword);
+            log.warn("密码登录失败（未设置密码）email={}", email);
+            throw ApiException.unauthorized(PASSWORD_NOT_SET);
         }
         if (!passwordService.matches(rawPassword, hash)) {
             log.warn("密码登录失败（密码不正确）email={}", email);
-            throw ApiException.unauthorized(BAD_CREDENTIALS);
+            throw ApiException.unauthorized(PASSWORD_WRONG);
         }
         return finishLogin(user, response, "密码");
     }
