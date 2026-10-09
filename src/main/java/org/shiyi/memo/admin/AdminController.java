@@ -198,6 +198,20 @@ public class AdminController {
         return adminService.updateWelcomeLetter(request, AdminContext.get());
     }
 
+    // ---------------- 验证码 ----------------
+
+    /**
+     * 邮箱验证码（只读）：排查「收不到验证码」时，看当前有效的是哪条、属于哪个邮箱。
+     * status 可选 valid / used / expired / blocked，不传或传别的值就是全部。
+     */
+    @GetMapping("/email-codes")
+    public PageResult<AdminDtos.AdminEmailCodeDto> emailCodes(@RequestParam(required = false) String email,
+                                                              @RequestParam(required = false) String status,
+                                                              @RequestParam(defaultValue = "1") long page,
+                                                              @RequestParam(defaultValue = "20") long size) {
+        return adminService.listEmailCodes(email, status, Math.max(1, page), Math.min(Math.max(1, size), 100));
+    }
+
     private static MediaType mediaTypeOf(FileAsset asset) {
         try {
             return MediaType.parseMediaType(asset.getMime());

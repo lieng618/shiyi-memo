@@ -27,7 +27,8 @@ import java.util.Optional;
 @RequiredArgsConstructor
 public class EmailCodeService {
 
-    private static final int MAX_ATTEMPTS = 5;
+    /** 校验失败次数上限，超过即作废；后台「验证码」页也用它判断状态 */
+    public static final int MAX_ATTEMPTS = 5;
     private static final String PURPOSE_LOGIN = "LOGIN";
 
     private final EmailCodeMapper codeMapper;

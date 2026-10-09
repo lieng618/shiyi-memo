@@ -119,6 +119,21 @@ export interface AdminStats {
   unreadMessageCount: number
 }
 
+/** 邮箱验证码（后台只读视图） */
+export interface AdminEmailCode {
+  id: number
+  email: string
+  code: string
+  status: 'VALID' | 'EXPIRED' | 'USED' | 'BLOCKED'
+  expiresAt: string
+  usedAt?: string | null
+  attempts?: number | null
+  ip?: string | null
+  createdAt: string
+  /** 服务端算好的剩余秒数，只有还没过期时才非空 */
+  remainingSeconds?: number | null
+}
+
 export interface PageResult<T> {
   records: T[]
   total: number

@@ -1,5 +1,6 @@
 import { adminHttp } from './api'
 import type {
+  AdminEmailCode,
   AdminFile,
   AdminLevel,
   AdminMemo,
@@ -57,6 +58,11 @@ export const adminApi = {
   welcomeLetter: () => adminHttp.get<AdminWelcomeLetter>('/welcome-letter').then((r) => r.data),
   updateWelcomeLetter: (payload: { enabled: boolean; title: string; contentHtml: string }) =>
     adminHttp.put<AdminWelcomeLetter>('/welcome-letter', payload).then((r) => r.data),
+
+  /** 邮箱验证码（只读）：status 可选 valid / used / expired / blocked */
+  emailCodes: (params: { email?: string; status?: string; page?: number; size?: number }) =>
+    adminHttp.get<PageResult<AdminEmailCode>>('/email-codes', { params }).then((r) => r.data),
+
   /** 上传信件附件（图片/文件），归属系统，不占用户配额 */
   uploadAttachment: (file: File, onProgress?: (percent: number) => void) => {
     const form = new FormData()

@@ -1,10 +1,14 @@
 package org.shiyi.memo.admin;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
 import org.shiyi.memo.admin.dto.AdminDtos;
+import org.shiyi.memo.auth.EmailCodeService;
+import org.shiyi.memo.auth.entity.EmailCode;
+import org.shiyi.memo.auth.mapper.EmailCodeMapper;
 import org.shiyi.memo.common.ApiException;
 import org.shiyi.memo.common.PageResult;
 import org.shiyi.memo.file.FileService;
@@ -30,9 +34,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import java.time.Duration;
+import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 
@@ -44,12 +51,18 @@ import java.util.Objects;
 @RequiredArgsConstructor
 public class AdminService {
 
+    private static final String CODE_STATUS_VALID = "VALID";
+    private static final String CODE_STATUS_EXPIRED = "EXPIRED";
+    private static final String CODE_STATUS_USED = "USED";
+    private static final String CODE_STATUS_BLOCKED = "BLOCKED";
+
     private final AppUserMapper userMapper;
     private final UserLevelMapper levelMapper;
     private final MemoMapper memoMapper;
     private final FileAssetMapper fileMapper;
     private final UserMessageMapper messageMapper;
     private final TagMapper tagMapper;
+    private final EmailCodeMapper emailCodeMapper;
     private final UserService userService;
     private final FileService fileService;
     private final MessageService messageService;
@@ -378,6 +391,70 @@ public class AdminService {
                 })
                 .toList();
         return PageResult.of(records, result.getTotal(), page, size);
+    }
+
+    // ---------------- 验证码 ----------------
+
+    /**
+     * 邮箱验证码列表（只读）。排查「收不到验证码」时，管理员能看到当前还有效的明文验证码
+     * 和它属于哪个邮箱。状态的判定顺序和 {@link EmailCodeService#verifyAndConsume} 保持一致：
+     * 已使用 → 已过期 → 错误过多 → 有效。
+     */
+    public PageResult<AdminDtos.AdminEmailCodeDto> listEmailCodes(String email, String status,
+                                                                  long page, long size) {
+        LocalDateTime now = LocalDateTime.now();
+        var wrapper = Wrappers.lambdaQuery(EmailCode.class);
+        if (StringUtils.hasText(email)) {
+            wrapper.like(EmailCode::getEmail, email.trim());
+        }
+        applyCodeStatusFilter(wrapper, status, now);
+        wrapper.orderByDesc(EmailCode::getId);
+
+        IPage<EmailCode> result = emailCodeMapper.selectPage(new Page<>(page, size), wrapper);
+        List<AdminDtos.AdminEmailCodeDto> records = result.getRecords().stream()
+                .map(code -> toAdminEmailCodeDto(code, now))
+                .toList();
+        return PageResult.of(records, result.getTotal(), page, size);
+    }
+
+    private static AdminDtos.AdminEmailCodeDto toAdminEmailCodeDto(EmailCode code, LocalDateTime now) {
+        String status;
+        Long remainingSeconds = null;
+        if (code.getUsedAt() != null) {
+            status = CODE_STATUS_USED;
+        } else if (code.getExpiresAt() == null || !code.getExpiresAt().isAfter(now)) {
+            status = CODE_STATUS_EXPIRED;
+        } else {
+            remainingSeconds = Duration.between(now, code.getExpiresAt()).getSeconds();
+            status = code.getAttempts() != null && code.getAttempts() >= EmailCodeService.MAX_ATTEMPTS
+                    ? CODE_STATUS_BLOCKED : CODE_STATUS_VALID;
+        }
+        return new AdminDtos.AdminEmailCodeDto(code.getId(), code.getEmail(), code.getCode(), status,
+                code.getExpiresAt(), code.getUsedAt(), code.getAttempts(), code.getIp(),
+                code.getCreatedAt(), remainingSeconds);
+    }
+
+    /** 四个筛选条件互斥，和上面的状态判定一一对应；未知值不过滤（前端传 all 走这里） */
+    private static void applyCodeStatusFilter(LambdaQueryWrapper<EmailCode> wrapper, String status,
+                                              LocalDateTime now) {
+        if (!StringUtils.hasText(status)) {
+            return;
+        }
+        switch (status.trim().toLowerCase(Locale.ROOT)) {
+            case "valid" -> wrapper.isNull(EmailCode::getUsedAt)
+                    .gt(EmailCode::getExpiresAt, now)
+                    .and(q -> q.isNull(EmailCode::getAttempts)
+                            .or().lt(EmailCode::getAttempts, EmailCodeService.MAX_ATTEMPTS));
+            case "used" -> wrapper.isNotNull(EmailCode::getUsedAt);
+            case "expired" -> wrapper.isNull(EmailCode::getUsedAt)
+                    .le(EmailCode::getExpiresAt, now);
+            case "blocked" -> wrapper.isNull(EmailCode::getUsedAt)
+                    .gt(EmailCode::getExpiresAt, now)
+                    .ge(EmailCode::getAttempts, EmailCodeService.MAX_ATTEMPTS);
+            default -> {
+                // 识别不了的状态不过滤，免得页面空白
+            }
+        }
     }
 
     // ---------------- 私有工具 ----------------

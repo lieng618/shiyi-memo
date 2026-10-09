@@ -77,6 +77,19 @@ public final class AdminDtos {
                                    String updatedBy, LocalDateTime updatedAt) {
     }
 
+    // ---------------- 验证码 ----------------
+
+    /**
+     * 邮箱验证码的只读视图，用来排查「收不到验证码」。
+     * status：VALID 有效 / EXPIRED 已过期 / USED 已使用 / BLOCKED 错误次数过多。
+     * remainingSeconds 只在还没过期时为非空，前端据此做倒计时。
+     */
+    public record AdminEmailCodeDto(Long id, String email, String code, String status,
+                                    LocalDateTime expiresAt, LocalDateTime usedAt,
+                                    Integer attempts, String ip, LocalDateTime createdAt,
+                                    Long remainingSeconds) {
+    }
+
     public record StatsDto(long userCount, long memoCount, long fileCount, long blockedFileCount,
                            long storageUsed, long messageCount, long unreadMessageCount) {
     }
