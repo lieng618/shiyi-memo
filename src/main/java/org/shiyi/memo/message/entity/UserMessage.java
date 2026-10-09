@@ -24,6 +24,8 @@ public class UserMessage {
     private Long refMemoId;
     private Long refFileId;
     private LocalDateTime readAt;
+    /** 定时送达时间；为空表示立即送达，未到点的消息对收件人不可见 */
+    private LocalDateTime sendAt;
     private String senderName;
     private LocalDateTime createdAt;
 }

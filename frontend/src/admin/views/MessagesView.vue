@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { Plus } from '@element-plus/icons-vue'
+import dayjs from 'dayjs'
 import { adminApi } from '../endpoints'
 import type { AdminMessage } from '../types'
 import { formatFull } from '@/utils/format'
@@ -18,6 +19,12 @@ const typeLabels: Record<string, string> = {
   NOTICE: '通知',
   FILE_BLOCKED: '文件屏蔽',
   MEMO_REMOVED: '笔记删除',
+  WELCOME: '欢迎',
+}
+
+/** 定时信还没到点：标一下，免得看着像已经发出去了（表格插槽传的是行数据，这里只要时间字段） */
+function isPending(row: Pick<AdminMessage, 'sendAt'>): boolean {
+  return Boolean(row.sendAt) && dayjs(row.sendAt).isAfter(dayjs())
 }
 
 onMounted(() => void load(true))
@@ -74,7 +81,9 @@ async function load(reset = false) {
           </el-table-column>
           <el-table-column label="发送时间" width="170">
             <template #default="{ row }">
-              <span class="tnum">{{ formatFull(row.createdAt) }}</span>
+              <div class="tnum">{{ formatFull(row.sendAt ?? row.createdAt) }}</div>
+              <el-tag v-if="isPending(row)" type="warning" size="small" effect="plain">待送达</el-tag>
+              <div v-else-if="row.sendAt" class="muted" style="font-size: 12px">定时信</div>
             </template>
           </el-table-column>
         </el-table>

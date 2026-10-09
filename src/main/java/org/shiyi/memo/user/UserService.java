@@ -101,12 +101,16 @@ public class UserService {
         userMapper.addStorageUsed(userId, delta);
     }
 
+    /** 本次调用是不是建了新号；欢迎信只发给刚注册的人 */
+    public record FoundOrCreated(AppUser user, boolean created) {
+    }
+
     @Transactional
-    public AppUser findOrCreateByEmail(String email) {
+    public FoundOrCreated findOrCreateByEmail(String email) {
         String normalized = normalizeEmail(email);
         AppUser existing = findByEmail(normalized);
         if (existing != null) {
-            return existing;
+            return new FoundOrCreated(existing, false);
         }
         if (!properties.getSecurity().isAllowRegister()) {
             throw ApiException.forbidden("该邮箱尚未注册，当前站点未开放注册");
@@ -119,7 +123,7 @@ public class UserService {
         user.setStorageUsed(0L);
         user.setLastLoginAt(LocalDateTime.now());
         userMapper.insert(user);
-        return user;
+        return new FoundOrCreated(user, true);
     }
 
     public void touchLastLogin(long userId) {

@@ -2,8 +2,8 @@
 import { computed, defineAsyncComponent, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { adminApi } from '../endpoints'
-import type { AdminUploadFile } from '../types'
-import { formatChatFileSize } from '@/utils/chatFile'
+import { useAdminUploads } from '../useAdminUploads'
+import { formatFull } from '@/utils/format'
 import UserPicker from './UserPicker.vue'
 
 // wangEditor 体积大，等第一次打开发信弹窗再加载，不拖慢后台首屏
@@ -25,6 +25,15 @@ const contentHtml = ref('<p><br></p>')
 const userCount = ref<number | null>(null)
 const sending = ref(false)
 const errorMessage = ref('')
+type SendTiming = 'now' | 'later'
+const sendTiming = ref<SendTiming>('now')
+/** 定时发送选中的时间点；「立即发送」时不会传给后端 */
+const sendAt = ref<string | null>(null)
+
+const { onUploadImage, onUploadAttachment } = useAdminUploads()
+
+/** 真正落库的送达时间：立即发送就是 null */
+const scheduledAt = computed(() => (sendTiming.value === 'later' ? sendAt.value : null))
 
 watch(
   () => props.modelValue,
@@ -36,6 +45,8 @@ watch(
     contentHtml.value = '<p><br></p>'
     errorMessage.value = ''
     userCount.value = null
+    sendTiming.value = 'now'
+    sendAt.value = null
     // 全体用户模式要提示将发给多少人
     adminApi
       .stats()
@@ -43,24 +54,6 @@ watch(
       .catch(() => {})
   },
 )
-
-/** 上传返回的 url 是用户侧前缀；编辑器和后台预览要走 /api/admin 前缀，发送时后端会统一改写 */
-function adminFileUrl(asset: AdminUploadFile, action: 'raw' | 'download') {
-  return `/api/admin/files/${asset.id}/${action}`
-}
-
-async function onUploadImage(file: File, onProgress: (percent: number) => void) {
-  const asset = await adminApi.uploadAttachment(file, onProgress)
-  return { url: adminFileUrl(asset, 'raw') }
-}
-
-async function onUploadAttachment(file: File, onProgress: (percent: number) => void) {
-  const asset = await adminApi.uploadAttachment(file, onProgress)
-  return {
-    url: adminFileUrl(asset, 'download'),
-    name: `${asset.originalName}（${formatChatFileSize(asset.size)}）`,
-  }
-}
 
 async function send() {
   errorMessage.value = ''
@@ -76,14 +69,27 @@ async function send() {
     errorMessage.value = '正文不能为空'
     return
   }
+  if (sendTiming.value === 'later' && !sendAt.value) {
+    errorMessage.value = '请选择送达时间'
+    return
+  }
+  if (scheduledAt.value && new Date(scheduledAt.value).getTime() <= Date.now()) {
+    errorMessage.value = '发送时间要晚于当前时间，想立刻发就选「立即发送」'
+    return
+  }
   if (recipientMode.value === 'all') {
     const count = userCount.value ?? 0
     try {
-      await ElMessageBox.confirm(`将发给全体 ${count} 位用户，每人一条站内信。确认发送？`, '发送全服信', {
-        confirmButtonText: '发送',
-        cancelButtonText: '再想想',
-        type: 'warning',
-      })
+      const when = scheduledAt.value ? `，将在 ${formatFull(scheduledAt.value)} 送达` : ''
+      await ElMessageBox.confirm(
+        `将发给全体 ${count} 位用户，每人一条站内信${when}。确认发送？`,
+        '发送全服信',
+        {
+          confirmButtonText: scheduledAt.value ? '定时发送' : '发送',
+          cancelButtonText: '再想想',
+          type: 'warning',
+        },
+      )
     } catch {
       return
     }
@@ -91,15 +97,20 @@ async function send() {
   sending.value = true
   try {
     if (recipientMode.value === 'all') {
-      await adminApi.broadcast({ title: title.value.trim(), contentHtml: contentHtml.value })
-      ElMessage.success('全服信已发送')
+      await adminApi.broadcast({
+        title: title.value.trim(),
+        contentHtml: contentHtml.value,
+        sendAt: scheduledAt.value,
+      })
+      ElMessage.success(scheduledAt.value ? '全服信已定时' : '全服信已发送')
     } else {
       await adminApi.sendMessage({
         userId: userId.value!,
         title: title.value.trim(),
         contentHtml: contentHtml.value,
+        sendAt: scheduledAt.value,
       })
-      ElMessage.success('已发送站内信')
+      ElMessage.success(scheduledAt.value ? '站内信已定时' : '已发送站内信')
     }
     emit('sent')
     open.value = false
@@ -144,6 +155,28 @@ function isEmptyRichText(html: string): boolean {
       </div>
 
       <div class="field">
+        <label>发送时间</label>
+        <div class="send-time">
+          <el-radio-group v-model="sendTiming">
+            <el-radio-button value="now">立即发送</el-radio-button>
+            <el-radio-button value="later">定时发送</el-radio-button>
+          </el-radio-group>
+          <el-date-picker
+            v-if="sendTiming === 'later'"
+            v-model="sendAt"
+            type="datetime"
+            placeholder="选择送达时间"
+            value-format="YYYY-MM-DDTHH:mm:ss"
+            format="YYYY-MM-DD HH:mm"
+            :disabled-date="(date: Date) => date.getTime() < Date.now() - 86400000"
+          />
+        </div>
+        <p v-if="sendTiming === 'later'" class="hint muted">
+          到点之前收件人看不到这封信，未读角标也不会变；到时间自动出现在站内信里。
+        </p>
+      </div>
+
+      <div class="field">
         <label>正文</label>
         <MessageEditor
           v-model="contentHtml"
@@ -159,7 +192,7 @@ function isEmptyRichText(html: string): boolean {
     <template #footer>
       <el-button @click="open = false">取消</el-button>
       <el-button type="primary" :loading="sending" @click="send">
-        {{ recipientMode === 'all' ? '发送全服信' : '发送' }}
+        {{ sendTiming === 'later' ? '定时发送' : recipientMode === 'all' ? '发送全服信' : '发送' }}
       </el-button>
     </template>
   </el-dialog>
@@ -188,6 +221,13 @@ function isEmptyRichText(html: string): boolean {
 .error {
   margin: 0;
   font-size: 12.5px;
+}
+
+.send-time {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3);
 }
 
 .error {

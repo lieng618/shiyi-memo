@@ -8,6 +8,7 @@ import type {
   AdminStats,
   AdminUploadFile,
   AdminUser,
+  AdminWelcomeLetter,
   LevelPayload,
   PageResult,
 } from './types'
@@ -45,11 +46,17 @@ export const adminApi = {
 
   messages: (params: { userId?: number; page?: number; size?: number }) =>
     adminHttp.get<PageResult<AdminMessage>>('/messages', { params }).then((r) => r.data),
-  sendMessage: (payload: { userId: number; title: string; contentHtml: string }) =>
+  /** sendAt 为空表示立即送达 */
+  sendMessage: (payload: { userId: number; title: string; contentHtml: string; sendAt?: string | null }) =>
     adminHttp.post('/messages', payload).then(() => undefined),
   /** 全服信：发给全体正常状态用户 */
-  broadcast: (payload: { title: string; contentHtml: string }) =>
+  broadcast: (payload: { title: string; contentHtml: string; sendAt?: string | null }) =>
     adminHttp.post('/messages/broadcast', payload).then(() => undefined),
+
+  /** 新用户欢迎信配置 */
+  welcomeLetter: () => adminHttp.get<AdminWelcomeLetter>('/welcome-letter').then((r) => r.data),
+  updateWelcomeLetter: (payload: { enabled: boolean; title: string; contentHtml: string }) =>
+    adminHttp.put<AdminWelcomeLetter>('/welcome-letter', payload).then((r) => r.data),
   /** 上传信件附件（图片/文件），归属系统，不占用户配额 */
   uploadAttachment: (file: File, onProgress?: (percent: number) => void) => {
     const form = new FormData()

@@ -15,6 +15,7 @@ import org.shiyi.memo.memo.MemoService;
 import org.shiyi.memo.memo.entity.Memo;
 import org.shiyi.memo.memo.mapper.MemoMapper;
 import org.shiyi.memo.message.MessageService;
+import org.shiyi.memo.message.WelcomeLetterService;
 import org.shiyi.memo.message.entity.UserMessage;
 import org.shiyi.memo.message.mapper.UserMessageMapper;
 import org.shiyi.memo.tag.mapper.TagMapper;
@@ -52,6 +53,7 @@ public class AdminService {
     private final UserService userService;
     private final FileService fileService;
     private final MessageService messageService;
+    private final WelcomeLetterService welcomeLetterService;
 
     // ---------------- 概览 ----------------
 
@@ -322,12 +324,15 @@ public class AdminService {
     @Transactional
     public void sendMessage(AdminDtos.SendMessageRequest request, String adminName) {
         userService.get(request.userId());
-        messageService.sendRich(request.userId(), request.title().trim(), request.contentHtml(), adminName);
+        messageService.sendRich(request.userId(), request.title().trim(), request.contentHtml(), adminName,
+                request.sendAt());
     }
 
     /**
      * 全服信：全体正常状态用户每人一条（各自独立的已读状态，未读角标随之 +1）。
      * 用户量级是个人的备忘录应用，事务内逐条插入即可；将来量大了再换批量 INSERT。
+     * 定了发送时间的话，信先落库但不显示，到点自动出现在各人的站内信里；
+     * 收件人名单按「发送这一刻」的用户算，之后新注册的人不会补收。
      */
     @Transactional
     public void broadcast(AdminDtos.BroadcastMessageRequest request, String adminName) {
@@ -336,8 +341,20 @@ public class AdminService {
                         .and(w -> w.eq(AppUser::getStatus, 1).or().isNull(AppUser::getStatus)))
                 .stream().map(AppUser::getId).toList();
         for (Long userId : userIds) {
-            messageService.sendRich(userId, request.title().trim(), request.contentHtml(), adminName);
+            messageService.sendRich(userId, request.title().trim(), request.contentHtml(), adminName,
+                    request.sendAt());
         }
+    }
+
+    // ---------------- 欢迎信 ----------------
+
+    public AdminDtos.WelcomeLetterDto welcomeLetter() {
+        return welcomeLetterService.get();
+    }
+
+    public AdminDtos.WelcomeLetterDto updateWelcomeLetter(AdminDtos.WelcomeLetterRequest request,
+                                                          String adminName) {
+        return welcomeLetterService.update(request, adminName);
     }
 
     public PageResult<AdminDtos.AdminMessageDto> listMessages(Long userId, long page, long size) {
@@ -357,7 +374,7 @@ public class AdminService {
                             owner == null ? null : owner.getEmail(),
                             owner == null ? null : owner.getNickname(),
                             message.getTitle(), message.getContent(), message.getType(), message.getSenderName(),
-                            message.getReadAt(), message.getCreatedAt());
+                            message.getSendAt(), message.getReadAt(), message.getCreatedAt());
                 })
                 .toList();
         return PageResult.of(records, result.getTotal(), page, size);

@@ -1,6 +1,7 @@
 package org.shiyi.memo.message;
 
 import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
@@ -14,6 +15,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.function.Consumer;
 
 @Service
 @RequiredArgsConstructor
@@ -22,6 +24,7 @@ public class MessageService {
     public static final String TYPE_NOTICE = "NOTICE";
     public static final String TYPE_FILE_BLOCKED = "FILE_BLOCKED";
     public static final String TYPE_MEMO_REMOVED = "MEMO_REMOVED";
+    public static final String TYPE_WELCOME = "WELCOME";
 
     private final UserMessageMapper messageMapper;
 
@@ -30,6 +33,7 @@ public class MessageService {
                 Wrappers.lambdaQuery(UserMessage.class)
                         .eq(UserMessage::getUserId, userId)
                         .ne(UserMessage::getType, "FRIEND_REQUEST")
+                        .and(visibleNow())
                         .orderByDesc(UserMessage::getId));
         return PageResult.of(result.getRecords().stream().map(MessageDtos.MessageDto::from).toList(),
                 result.getTotal(), page, size);
@@ -43,10 +47,21 @@ public class MessageService {
     public MessageDtos.MessageDto detail(long userId, long messageId) {
         UserMessage message = messageMapper.selectById(messageId);
         if (message == null || !message.getUserId().equals(userId)
-                || "FRIEND_REQUEST".equals(message.getType())) {
+                || "FRIEND_REQUEST".equals(message.getType()) || isPending(message)) {
             throw ApiException.notFound("消息不存在或已删除");
         }
         return MessageDtos.MessageDto.from(message);
+    }
+
+    /** 已送达：没设送达时间（立即发）或已经到点。定时信到点后自己就出现在列表里 */
+    static Consumer<LambdaQueryWrapper<UserMessage>> visibleNow() {
+        LocalDateTime now = LocalDateTime.now();
+        return wrapper -> wrapper.isNull(UserMessage::getSendAt).or().le(UserMessage::getSendAt, now);
+    }
+
+    /** 定时信还没到点，对收件人来说就等于不存在 */
+    static boolean isPending(UserMessage message) {
+        return message.getSendAt() != null && message.getSendAt().isAfter(LocalDateTime.now());
     }
 
     @Transactional
@@ -72,10 +87,29 @@ public class MessageService {
      */
     @Transactional
     public UserMessage sendRich(long userId, String title, String contentHtml, String senderName) {
+        return sendRich(userId, title, contentHtml, senderName, null);
+    }
+
+    /** 同上，但可以指定送达时间（null = 立即送达） */
+    @Transactional
+    public UserMessage sendRich(long userId, String title, String contentHtml, String senderName,
+                                LocalDateTime sendAt) {
+        return insertRich(userId, title, contentHtml, senderName, TYPE_NOTICE, sendAt);
+    }
+
+    /** 新用户欢迎信：归到 WELCOME 类型，前台会显示成「欢迎」标签，便于和通知区分 */
+    @Transactional
+    public UserMessage sendWelcome(long userId, String title, String contentHtml, String senderName) {
+        return insertRich(userId, title, contentHtml, senderName, TYPE_WELCOME, null);
+    }
+
+    private UserMessage insertRich(long userId, String title, String contentHtml, String senderName,
+                                   String type, LocalDateTime sendAt) {
         String html = contentHtml.replace("/api/admin/files/", "/api/files/");
-        UserMessage message = newMessage(userId, title, TYPE_NOTICE, null, null, senderName);
+        UserMessage message = newMessage(userId, title, type, null, null, senderName);
         message.setContent(toPlainText(html));
         message.setContentHtml(html);
+        message.setSendAt(sendAt);
         messageMapper.insert(message);
         return message;
     }

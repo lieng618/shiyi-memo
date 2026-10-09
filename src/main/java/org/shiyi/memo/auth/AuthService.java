@@ -7,6 +7,7 @@ import org.shiyi.memo.auth.dto.AuthDtos;
 import org.shiyi.memo.common.ApiException;
 import org.shiyi.memo.common.SimpleRateLimiter;
 import org.shiyi.memo.config.AppProperties;
+import org.shiyi.memo.message.WelcomeLetterService;
 import org.shiyi.memo.security.AuthUser;
 import org.shiyi.memo.security.JwtService;
 import org.shiyi.memo.user.UserService;
@@ -36,6 +37,7 @@ public class AuthService {
     private final JwtService jwtService;
     private final AppProperties properties;
     private final SimpleRateLimiter rateLimiter;
+    private final WelcomeLetterService welcomeLetterService;
 
     // ---------------- 验证码 ----------------
 
@@ -53,8 +55,23 @@ public class AuthService {
 
         emailCodeService.verifyAndConsume(email, inputCode);
 
-        AppUser user = userService.findOrCreateByEmail(email);
-        return finishLogin(user, response, "验证码");
+        UserService.FoundOrCreated result = userService.findOrCreateByEmail(email);
+        if (result.created()) {
+            sendWelcomeLetter(result.user());
+        }
+        return finishLogin(result.user(), response, "验证码");
+    }
+
+    /**
+     * 刚注册的用户发一封欢迎信（后台没开启就什么都不做）。
+     * 特意吞掉异常：欢迎信发不出去是小事，不能因此让用户登不进来。
+     */
+    private void sendWelcomeLetter(AppUser user) {
+        try {
+            welcomeLetterService.sendToNewUser(user.getId(), user.getNickname(), user.getEmail());
+        } catch (Exception ex) {
+            log.warn("欢迎信发送失败，不影响本次登录 userId={} email={}", user.getId(), user.getEmail(), ex);
+        }
     }
 
     // ---------------- 密码 ----------------

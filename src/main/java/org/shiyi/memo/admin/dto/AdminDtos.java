@@ -47,18 +47,34 @@ public final class AdminDtos {
     public record BlockFileRequest(@Size(max = 255) String reason) {
     }
 
+    /** 给单个用户发站内信；sendAt 为 null 表示立即送达，填未来时间就是定时送达 */
     public record SendMessageRequest(@NotNull Long userId,
                                      @NotBlank @Size(max = 128) String title,
-                                     @NotBlank @Size(max = 60000) String contentHtml) {
+                                     @NotBlank @Size(max = 60000) String contentHtml,
+                                     LocalDateTime sendAt) {
     }
 
+    /** 全服信：sendAt 同单发，null 表示立即送达 */
     public record BroadcastMessageRequest(@NotBlank @Size(max = 128) String title,
-                                          @NotBlank @Size(max = 60000) String contentHtml) {
+                                          @NotBlank @Size(max = 60000) String contentHtml,
+                                          LocalDateTime sendAt) {
     }
 
     public record AdminMessageDto(Long id, Long userId, String userEmail, String userNickname,
                                   String title, String content, String type, String senderName,
-                                  LocalDateTime readAt, LocalDateTime createdAt) {
+                                  LocalDateTime sendAt, LocalDateTime readAt, LocalDateTime createdAt) {
+    }
+
+    // ---------------- 欢迎信 ----------------
+
+    /** 欢迎信的标题和正文允许先存草稿（关闭状态），所以只在服务端校验「开启时必须填全」 */
+    public record WelcomeLetterRequest(@NotNull Boolean enabled,
+                                       @Size(max = 128) String title,
+                                       @Size(max = 60000) String contentHtml) {
+    }
+
+    public record WelcomeLetterDto(boolean enabled, String title, String contentHtml,
+                                   String updatedBy, LocalDateTime updatedAt) {
     }
 
     public record StatsDto(long userCount, long memoCount, long fileCount, long blockedFileCount,

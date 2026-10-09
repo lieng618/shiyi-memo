@@ -84,8 +84,19 @@ export interface AdminMessage {
   content: string
   type: string
   senderName: string
+  /** 定时送达时间；为空表示发出即送达 */
+  sendAt?: string | null
   readAt?: string | null
   createdAt: string
+}
+
+/** 新用户欢迎信配置（单行） */
+export interface AdminWelcomeLetter {
+  enabled: boolean
+  title: string
+  contentHtml: string
+  updatedBy?: string | null
+  updatedAt?: string | null
 }
 
 /** 后台上传信件附件的返回（FileDto 的子集，够编辑器插图/插附件用） */

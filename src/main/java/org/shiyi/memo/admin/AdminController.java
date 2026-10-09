@@ -184,6 +184,20 @@ public class AdminController {
         adminService.broadcast(request, AdminContext.get());
     }
 
+    // ---------------- 欢迎信 ----------------
+
+    @GetMapping("/welcome-letter")
+    public AdminDtos.WelcomeLetterDto welcomeLetter() {
+        return adminService.welcomeLetter();
+    }
+
+    /** 保存欢迎信配置；开启后新注册的用户会收到一封站内信 */
+    @PutMapping("/welcome-letter")
+    public AdminDtos.WelcomeLetterDto updateWelcomeLetter(
+            @Valid @RequestBody AdminDtos.WelcomeLetterRequest request) {
+        return adminService.updateWelcomeLetter(request, AdminContext.get());
+    }
+
     private static MediaType mediaTypeOf(FileAsset asset) {
         try {
             return MediaType.parseMediaType(asset.getMime());

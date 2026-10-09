@@ -22,6 +22,7 @@ const typeLabels: Record<string, string> = {
   NOTICE: '通知',
   FILE_BLOCKED: '文件屏蔽',
   MEMO_REMOVED: '笔记删除',
+  WELCOME: '欢迎',
 }
 
 const listRef = ref<HTMLElement | null>(null)

@@ -7,6 +7,7 @@ import {
   FolderOpened,
   Histogram,
   Message,
+  Promotion,
   SwitchButton,
   User as UserIcon,
 } from '@element-plus/icons-vue'
@@ -18,8 +19,9 @@ import NotesView from './views/NotesView.vue'
 import FilesView from './views/FilesView.vue'
 import MessagesView from './views/MessagesView.vue'
 import LevelsView from './views/LevelsView.vue'
+import WelcomeView from './views/WelcomeView.vue'
 
-type ViewKey = 'dashboard' | 'users' | 'notes' | 'files' | 'messages' | 'levels'
+type ViewKey = 'dashboard' | 'users' | 'notes' | 'files' | 'messages' | 'welcome' | 'levels'
 
 const navItems: { key: ViewKey; label: string; icon: unknown }[] = [
   { key: 'dashboard', label: '概览', icon: DataLine },
@@ -27,6 +29,7 @@ const navItems: { key: ViewKey; label: string; icon: unknown }[] = [
   { key: 'notes', label: '笔记', icon: Document },
   { key: 'files', label: '文件', icon: FolderOpened },
   { key: 'messages', label: '站内信', icon: Message },
+  { key: 'welcome', label: '欢迎信', icon: Promotion },
   { key: 'levels', label: '等级与配额', icon: Histogram },
 ]
 
@@ -161,6 +164,7 @@ async function logout() {
         <NotesView v-else-if="current === 'notes'" />
         <FilesView v-else-if="current === 'files'" />
         <MessagesView v-else-if="current === 'messages'" />
+        <WelcomeView v-else-if="current === 'welcome'" />
         <LevelsView v-else-if="current === 'levels'" />
       </div>
     </main>
