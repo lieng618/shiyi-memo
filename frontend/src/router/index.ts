@@ -30,6 +30,13 @@ const routes: RouteRecordRaw[] = [
     meta: { public: true, title: '查看分享' },
   },
   {
+    // 邀请链接：/j/{邀请码}，未登录也能打开，登录后直接申请加好友
+    path: '/j/:code',
+    name: 'invite',
+    component: () => import('@/views/InviteView.vue'),
+    meta: { public: true, title: '好友邀请' },
+  },
+  {
     path: '/me',
     name: 'profile',
     component: () => import('@/views/ProfileView.vue'),

@@ -8,6 +8,7 @@ import type {
   FriendNotification,
   FriendRequestList,
   FriendSummary,
+  InviteCard,
   LoginResponse,
   MemoDetail,
   MemoSummary,
@@ -60,6 +61,14 @@ export const memoApi = {
 export const shareApi = {
   get: (token: string) =>
     http.get<PublicMemoDetail>(`/public/memos/${encodeURIComponent(token)}`).then((r) => r.data),
+}
+
+/** 邀请链接落地页：免登录也能看「谁邀请你」 */
+export const inviteApi = {
+  get: (code: string) =>
+    http
+      .get<InviteCard>(`/public/invite/${encodeURIComponent(code)}`, { skipAuthRedirect: true })
+      .then((r) => r.data),
 }
 
 export const tagApi = {

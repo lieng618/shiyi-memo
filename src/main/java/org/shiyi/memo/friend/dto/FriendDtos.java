@@ -36,6 +36,14 @@ public final class FriendDtos {
     public record SendRequestRequest(@NotNull Long toUserId) {
     }
 
+    /** 邀请链接落地页看到的信息：只给昵称，够认出是谁就行 */
+    public record InviteCardDto(long userId, String nickname) {
+
+        public static InviteCardDto from(AppUser user) {
+            return new InviteCardDto(user.getId(), user.getNickname());
+        }
+    }
+
     /** 好友页申请列表：incoming = 收到的，outgoing = 我发出的 */
     public record FriendRequestListDto(List<FriendRequestDto> incoming,
                                        List<FriendRequestDto> outgoing) {

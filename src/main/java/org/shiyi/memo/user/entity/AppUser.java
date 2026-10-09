@@ -16,6 +16,8 @@ public class AppUser {
 
     private String email;
     private String nickname;
+    /** 邀请码：拼成 /j/{code} 给朋友点，加了唯一索引；老数据由迁移补齐 */
+    private String inviteCode;
     /** 头像对应的附件 id，可以为 null */
     private Long avatarFileId;
     private String passwordHash;

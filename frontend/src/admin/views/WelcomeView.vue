@@ -46,11 +46,11 @@ async function save() {
   errorMessage.value = ''
   // 关闭状态允许留空当草稿，开启前必须填全，否则用户收到的会是一封空信
   if (enabled.value && !title.value.trim()) {
-    errorMessage.value = '开启欢迎信前，请先填写标题'
+    errorMessage.value = '先填标题'
     return
   }
   if (enabled.value && isBlankRichText(contentHtml.value)) {
-    errorMessage.value = '开启欢迎信前，请先填写正文'
+    errorMessage.value = '先填正文'
     return
   }
   saving.value = true
@@ -62,7 +62,7 @@ async function save() {
         contentHtml: contentHtml.value,
       }),
     )
-    ElMessage.success(enabled.value ? '已保存，新注册用户会收到这封信' : '已保存（当前关闭，不会发送）')
+    ElMessage.success(enabled.value ? '已保存，新注册用户会收到' : '已保存，未开启')
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : '保存失败'
   } finally {
@@ -84,7 +84,7 @@ function isBlankRichText(html: string): boolean {
         {{ enabled ? '已开启' : '已关闭' }}
       </el-tag>
       <span class="muted">
-        {{ enabled ? '新注册的用户会收到这封站内信' : '开启后，新注册的用户才会收到' }}
+        {{ enabled ? '新注册用户会收到' : '未开启，不会发送' }}
       </span>
       <div style="flex: 1" />
       <el-button type="primary" :loading="saving" @click="save">保存配置</el-button>
@@ -95,9 +95,6 @@ function isBlankRichText(html: string): boolean {
         <div class="field">
           <label>欢迎信开关</label>
           <el-switch v-model="enabled" active-text="开启" inactive-text="关闭" />
-          <p class="hint muted">
-            只影响之后注册的新用户；已经发出去的信是当时的快照，改这里不会动它们。
-          </p>
         </div>
 
         <div class="field">
@@ -113,8 +110,7 @@ function isBlankRichText(html: string): boolean {
             :upload-attachment="onUploadAttachment"
           />
           <p class="hint muted">
-            可以用 <code>{nickname}</code> 和 <code>{email}</code> 占位符，发送时会替换成对方的昵称和邮箱。
-            图片将直接嵌入正文，其余文件以附件形式插入。
+            支持 <code>{nickname}</code>、<code>{email}</code> 占位符
           </p>
         </div>
 

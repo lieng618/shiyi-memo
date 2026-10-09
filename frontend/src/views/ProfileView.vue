@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Download, SwitchButton, Upload } from '@element-plus/icons-vue'
@@ -8,6 +8,7 @@ import { authApi, backupApi, fileApi, userApi } from '@/api'
 import { useAuthStore } from '@/stores/auth'
 import { useTheme } from '@/composables/useTheme'
 import { formatFull, formatSize } from '@/utils/format'
+import { copyText } from '@/utils/clipboard'
 import { downloadBlob } from '@/utils/download'
 import type { Quota } from '@/types'
 import PageHeader from '@/components/PageHeader.vue'
@@ -23,6 +24,22 @@ const saving = ref(false)
 const uploadingAvatar = ref(false)
 const avatarInput = ref<HTMLInputElement | null>(null)
 const quota = ref<Quota | null>(null)
+
+/** 我的邀请链接：朋友点开就能申请加好友，不用先知道邮箱或昵称 */
+const inviteUrl = computed(() => {
+  const code = auth.user?.inviteCode
+  return code ? `${window.location.origin}/j/${code}` : ''
+})
+
+async function copyInviteUrl() {
+  if (!inviteUrl.value) return
+  try {
+    await copyText(inviteUrl.value)
+    ElMessage.success('邀请链接已复制')
+  } catch {
+    ElMessage.error('复制失败，请手动复制')
+  }
+}
 
 // ---- 登录密码 ----
 const pwdOpen = ref(false)
@@ -271,6 +288,23 @@ async function logout() {
               <el-button type="primary" :loading="saving" @click="saveNickname">保存</el-button>
             </div>
             <p v-if="nicknameError" id="profile-nickname-error" class="error" role="alert">{{ nicknameError }}</p>
+          </div>
+        </section>
+
+        <section class="card">
+          <h2>邀请朋友</h2>
+          <div class="row">
+            <input
+              id="profile-invite"
+              :value="inviteUrl"
+              type="text"
+              readonly
+              aria-label="我的邀请链接"
+              placeholder="邀请链接生成中…"
+            />
+            <el-button type="primary" :disabled="!inviteUrl" @click="copyInviteUrl">
+              复制链接
+            </el-button>
           </div>
         </section>
 

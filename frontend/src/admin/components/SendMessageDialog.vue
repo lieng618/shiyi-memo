@@ -74,15 +74,15 @@ async function send() {
     return
   }
   if (scheduledAt.value && new Date(scheduledAt.value).getTime() <= Date.now()) {
-    errorMessage.value = '发送时间要晚于当前时间，想立刻发就选「立即发送」'
+    errorMessage.value = '发送时间要晚于当前时间'
     return
   }
   if (recipientMode.value === 'all') {
     const count = userCount.value ?? 0
     try {
-      const when = scheduledAt.value ? `，将在 ${formatFull(scheduledAt.value)} 送达` : ''
+      const when = scheduledAt.value ? `，${formatFull(scheduledAt.value)} 送达` : ''
       await ElMessageBox.confirm(
-        `将发给全体 ${count} 位用户，每人一条站内信${when}。确认发送？`,
+        `发给全体 ${count} 位用户${when}？`,
         '发送全服信',
         {
           confirmButtonText: scheduledAt.value ? '定时发送' : '发送',
@@ -102,7 +102,7 @@ async function send() {
         contentHtml: contentHtml.value,
         sendAt: scheduledAt.value,
       })
-      ElMessage.success(scheduledAt.value ? '全服信已定时' : '全服信已发送')
+      ElMessage.success(scheduledAt.value ? '已定时发送' : '已发送')
     } else {
       await adminApi.sendMessage({
         userId: userId.value!,
@@ -110,7 +110,7 @@ async function send() {
         contentHtml: contentHtml.value,
         sendAt: scheduledAt.value,
       })
-      ElMessage.success(scheduledAt.value ? '站内信已定时' : '已发送站内信')
+      ElMessage.success(scheduledAt.value ? '已定时发送' : '已发送')
     }
     emit('sent')
     open.value = false
@@ -172,7 +172,7 @@ function isEmptyRichText(html: string): boolean {
           />
         </div>
         <p v-if="sendTiming === 'later'" class="hint muted">
-          到点之前收件人看不到这封信，未读角标也不会变；到时间自动出现在站内信里。
+          到点后自动送达，之前对方看不到。
         </p>
       </div>
 

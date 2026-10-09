@@ -95,8 +95,9 @@ function applyRequests(incoming: FriendRequest[], outgoing: FriendRequest[]) {
 
 async function search() {
   const value = keyword.value.trim()
-  if (!value) {
-    ElMessage.warning('输入昵称再搜索')
+  // 后端也会拦，这里先挡住能省一次请求，提示也更即时
+  if (value.length < 3) {
+    ElMessage.warning('至少输入 3 个字符')
     return
   }
   searching.value = true
@@ -333,7 +334,7 @@ async function openChat(friend: Friend) {
           <div class="search-control">
             <el-input
               v-model="keyword"
-              placeholder="输入昵称搜索用户"
+              placeholder="昵称或邮箱"
               clearable
               @keyup.enter="search"
             />
@@ -363,7 +364,7 @@ async function openChat(friend: Friend) {
             </li>
           </ul>
 
-          <div v-else-if="searched" class="panel-empty">没有找到这个昵称的用户。</div>
+          <div v-else-if="searched" class="panel-empty">没找到，换个词试试。</div>
         </section>
       </div>
     </div>

@@ -17,6 +17,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import java.security.SecureRandom;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Locale;
@@ -26,8 +27,11 @@ import java.util.Locale;
 public class UserService {
 
     private static final String NICKNAME_TAKEN = "昵称已被使用，换一个吧";
+    /** 邀请码用的字符集：去掉了 0/1/l/o 这些容易看错、念错的字符 */
+    private static final String INVITE_ALPHABET = "23456789abcdefghjkmnpqrstuvwxyz";
 
     private final AppUserMapper userMapper;
+    private final SecureRandom random = new SecureRandom();
     private final UserLevelMapper levelMapper;
     private final FileAssetMapper fileAssetMapper;
     private final AppProperties properties;
@@ -118,6 +122,7 @@ public class UserService {
         AppUser user = new AppUser();
         user.setEmail(normalized);
         user.setNickname(uniqueNicknameFromEmail(normalized));
+        user.setInviteCode(uniqueInviteCode());
         user.setLevelId(defaultLevel().getId());
         user.setStatus(1);
         user.setStorageUsed(0L);
@@ -131,6 +136,36 @@ public class UserService {
         patch.setId(userId);
         patch.setLastLoginAt(LocalDateTime.now());
         userMapper.updateById(patch);
+    }
+
+    /** 按邀请码找人（邀请链接落地页用）；找不到或码为空都返回 null */
+    public AppUser findByInviteCode(String code) {
+        if (code == null || code.isBlank()) {
+            return null;
+        }
+        return userMapper.selectOne(Wrappers.lambdaQuery(AppUser.class)
+                .eq(AppUser::getInviteCode, code.trim().toLowerCase(Locale.ROOT)));
+    }
+
+    /** 生成一个没被占用的邀请码；连撞 20 次基本不可能，兜底换成 16 位 */
+    private String uniqueInviteCode() {
+        for (int i = 0; i < 20; i++) {
+            String candidate = randomInviteCode(10);
+            Long count = userMapper.selectCount(Wrappers.lambdaQuery(AppUser.class)
+                    .eq(AppUser::getInviteCode, candidate));
+            if (count == null || count == 0) {
+                return candidate;
+            }
+        }
+        return randomInviteCode(16);
+    }
+
+    private String randomInviteCode(int length) {
+        StringBuilder code = new StringBuilder(length);
+        for (int i = 0; i < length; i++) {
+            code.append(INVITE_ALPHABET.charAt(random.nextInt(INVITE_ALPHABET.length())));
+        }
+        return code.toString();
     }
 
     public AppUser updateNickname(long userId, String nickname) {

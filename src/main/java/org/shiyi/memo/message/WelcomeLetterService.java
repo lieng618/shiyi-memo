@@ -38,7 +38,7 @@ public class WelcomeLetterService {
         String title = request.title() == null ? "" : request.title().trim();
         String contentHtml = request.contentHtml() == null ? "" : request.contentHtml();
         if (Boolean.TRUE.equals(request.enabled()) && (title.isEmpty() || isBlankHtml(contentHtml))) {
-            throw ApiException.badRequest("开启欢迎信前，请先填写标题和正文");
+            throw ApiException.badRequest("先填标题和正文");
         }
 
         WelcomeLetter letter = new WelcomeLetter();

@@ -35,14 +35,15 @@ public final class UserDtos {
         }
     }
 
-    public record UserDto(Long id, String email, String nickname, String avatarUrl, Boolean hasPassword, Integer status,
+    public record UserDto(Long id, String email, String nickname, String inviteCode, String avatarUrl,
+                          Boolean hasPassword, Integer status,
                           LevelDto level, Long storageUsed, Long maxStorage,
                           LocalDateTime lastLoginAt, LocalDateTime createdAt) {
 
         public static UserDto from(AppUser user, UserLevel level) {
             boolean hasPassword = user.getPasswordHash() != null && !user.getPasswordHash().isBlank();
-            return new UserDto(user.getId(), user.getEmail(), user.getNickname(), UserDtos.avatarUrl(user),
-                    hasPassword, user.getStatus(),
+            return new UserDto(user.getId(), user.getEmail(), user.getNickname(), user.getInviteCode(),
+                    UserDtos.avatarUrl(user), hasPassword, user.getStatus(),
                     level == null ? null : LevelDto.from(level),
                     user.getStorageUsed(),
                     level == null ? null : level.getMaxStorage(),

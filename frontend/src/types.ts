@@ -13,6 +13,8 @@ export interface User {
   id: number
   email: string
   nickname: string
+  /** 我的邀请码：拼成 /j/{code} 发给朋友 */
+  inviteCode?: string | null
   avatarUrl?: string | null
   hasPassword?: boolean | null
   status: number
@@ -160,6 +162,12 @@ export interface UserSearchResult {
   userId: number
   nickname: string
   avatarUrl?: string | null
+}
+
+/** 邀请链接落地页拿到的信息 */
+export interface InviteCard {
+  userId: number
+  nickname: string
 }
 
 export interface FriendRequest {

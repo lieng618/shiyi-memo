@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import lombok.RequiredArgsConstructor;
 import org.shiyi.memo.common.ApiException;
+import org.shiyi.memo.common.SimpleRateLimiter;
 import org.shiyi.memo.friend.dto.FriendDtos;
 import org.shiyi.memo.friend.entity.ChatClear;
 import org.shiyi.memo.friend.entity.ChatMessage;
@@ -19,10 +20,12 @@ import org.shiyi.memo.realtime.RealtimeEventService;
 import org.shiyi.memo.user.dto.UserDtos;
 import org.shiyi.memo.user.entity.AppUser;
 import org.shiyi.memo.user.mapper.AppUserMapper;
+import org.shiyi.memo.user.UserService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -47,6 +50,13 @@ public class FriendService {
     public static final String REQUEST_ACCEPTED = "ACCEPTED";
     public static final String REQUEST_REJECTED = "REJECTED";
     public static final String REQUEST_CANCELED = "CANCELED";
+    /**
+     * 搜索关键词最短长度。昵称是注册时用邮箱前缀生成的，一两个字符就能把用户列表翻出来，
+     * 所以低于这个长度直接不受理；完整邮箱本来就更长，不受影响。
+     */
+    private static final int MIN_SEARCH_LENGTH = 3;
+    /** 同意好友后自动发的那句话，和微信一样给会话开个头 */
+    private static final String GREETING_AFTER_ACCEPT = "我们已经成为好友了，现在可以聊天了";
 
     private final FriendMapper friendMapper;
     private final FriendRequestMapper requestMapper;
@@ -55,6 +65,7 @@ public class FriendService {
     private final AppUserMapper userMapper;
     private final FileService fileService;
     private final RealtimeEventService realtimeEventService;
+    private final SimpleRateLimiter rateLimiter;
 
     /* ---------------------------------------------------------------- 好友列表 */
 
@@ -92,16 +103,29 @@ public class FriendService {
 
     /* ---------------------------------------------------------------- 好友申请 */
 
-    /** 按昵称搜人：排除自己、已好友、被禁用的账号 */
+    /**
+     * 搜人加好友：昵称按子串匹配，邮箱要完整填对才命中（邮箱是注册凭据，不能给前缀试探）。
+     * 结果一律只回昵称和头像，不含邮箱；自己、已好友、被禁用的账号都不出现。
+     */
     public List<FriendDtos.UserSearchDto> search(long userId, String keyword) {
         String kw = keyword == null ? "" : keyword.trim();
         if (kw.isEmpty()) {
             return List.of();
         }
+        if (kw.length() < MIN_SEARCH_LENGTH) {
+            throw ApiException.badRequest("至少输入 " + MIN_SEARCH_LENGTH + " 个字符");
+        }
+        // 昵称是公开信息，邮箱不是（还是注册凭据）。所以昵称可以模糊搜，
+        // 邮箱必须一字不差地填全才命中，免得被人拿前缀一点点试出账号。
+        if (!rateLimiter.tryAcquire("friend-search:" + userId, 60, Duration.ofMinutes(10))) {
+            throw ApiException.tooManyRequests("搜索太频繁，稍后再试");
+        }
         Set<Long> friendIds = friendIdsOf(userId);
         return userMapper.selectList(Wrappers.lambdaQuery(AppUser.class)
                         .eq(AppUser::getStatus, 1)
-                        .like(AppUser::getNickname, kw)
+                        .and(w -> w.like(AppUser::getNickname, kw)
+                                .or()
+                                .eq(AppUser::getEmail, UserService.normalizeEmail(kw)))
                         .ne(AppUser::getId, userId)
                         .orderByAsc(AppUser::getId)
                         .last("limit 10"))
@@ -254,8 +278,22 @@ public class FriendService {
         // 单删过的关系在这里恢复：两个方向谁缺补谁，已有的一行保留原样
         insertFriendIfAbsent(userId, requesterId);
         insertFriendIfAbsent(requesterId, userId);
+        // 和微信一样，同意后先在会话里留一句话，申请人那边也会多一条未读提醒
+        insertGreeting(userId, requesterId, GREETING_AFTER_ACCEPT);
         realtimeEventService.sendAfterCommit(userId, "friends", "refresh");
         realtimeEventService.sendAfterCommit(requesterId, "friends", "refresh");
+        realtimeEventService.sendAfterCommit(requesterId, "chat", "refresh");
+    }
+
+    /** 由同意方发出的一句招呼，走普通消息，收件人那边算未读 */
+    private void insertGreeting(long senderId, long recipientId, String content) {
+        ChatMessage message = new ChatMessage();
+        message.setSenderId(senderId);
+        message.setRecipientId(recipientId);
+        message.setContent(content);
+        message.setDeliverable(true);
+        message.setCreatedAt(LocalDateTime.now());
+        chatMessageMapper.insert(message);
     }
 
     @Transactional
