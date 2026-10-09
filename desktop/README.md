@@ -45,21 +45,13 @@ npm run dist
 
 ## 改服务器地址
 
-**不需要改代码，也不需要重新打包。**
+地址编译在 `src/config.js` 里，改完重新打包：
 
-首次运行会在 `%APPDATA%\shiyi-memo\config.json` 生成配置文件：
-
-```json
-{
-  "serverUrl": "http://49.232.236.230:8080",
-  "openDevTools": false
-}
+```js
+const SERVER_URL = 'https://memo.goldminer.cloud'
 ```
 
-改 `serverUrl` 后重启应用即可。注意这个文件**只在首次运行时生成，之后不会被覆盖**，
-所以升级版本不会冲掉你改过的地址。
-
-托盘菜单和标题栏菜单里都有「打开配置文件」可以直接打开它。
+同一个文件里的 `OPEN_DEVTOOLS` 打开后，应用启动时会自动弹出开发者工具，方便排查线上页面。
 
 ## 目录结构
 
@@ -67,7 +59,7 @@ npm run dist
 desktop/
   src/
     main.js        主进程：窗口、托盘、菜单、加载失败处理
-    config.js      服务器地址读取（默认值 + 配置文件覆盖）
+    config.js      打包期常量（站点地址、是否开开发者工具）
     preload.js     暴露给渲染层的少量能力（重试 / 打开外链 / 退出 / 同步主题）
     error.html     连接失败时显示的本地页面
     assets/
@@ -114,9 +106,10 @@ desktop/
   需要「更多信息 → 仍要运行」。要消除需要购买 OV/EV 代码签名证书。
 - **自动更新**：外壳本身更新需要用户手动装新版本。
   前端不在此列——前端改完部署到服务器即可，用户无感。
-- **无 HTTPS 下的系统通知**：站点是 `http://`，不属于 secure context，
-  以后要用系统通知或截图，需要加
-  `app.commandLine.appendSwitch('unsafely-treat-insecure-origin-as-secure', '<站点地址>')`。
+- **系统通知 / 屏幕截图**：站点走 HTTPS 时属于 secure context，可以直接用。
+  如果哪天部署回 `http://`，这类能力会被浏览器限制，需要加
+  `app.commandLine.appendSwitch('unsafely-treat-insecure-origin-as-secure', '<站点地址>')`
+  才能启用。
 
 ## 日志排查
 

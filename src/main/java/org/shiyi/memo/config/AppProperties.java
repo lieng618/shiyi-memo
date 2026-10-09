@@ -73,7 +73,7 @@ public class AppProperties {
         private boolean allowRegister = true;
         /** 新用户默认等级编码 */
         private String defaultLevelCode = "free";
-        /** 允许跨域的前端地址（用 Vite 代理时其实用不到） */
+        /** 允许跨域的前端地址 */
         private List<String> allowedOrigins = new ArrayList<>(List.of("http://localhost:5173"));
     }
 }

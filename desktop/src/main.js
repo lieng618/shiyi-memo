@@ -9,7 +9,7 @@ const path = require('node:path')
 // 固定 userData 为纯 ASCII 目录名。中文目录名在缓存、崩溃转储等环节偶尔出问题。
 app.setPath('userData', path.join(app.getPath('appData'), 'shiyi-memo'))
 
-const { getConfigPath, ensureConfigFile, loadConfig } = require('./config')
+const { SERVER_URL, OPEN_DEVTOOLS } = require('./config')
 
 const ASSETS_DIR = path.join(__dirname, 'assets')
 const WINDOW_STATE_FILE = path.join(app.getPath('userData'), 'window-state.json')
@@ -25,8 +25,6 @@ const TITLE_BAR_THEME = {
   dark: { color: '#171614', symbolColor: '#f1ede6' },
   light: { color: '#faf9f5', symbolColor: '#1c1917' },
 }
-
-const config = loadConfig()
 
 let mainWindow = null
 let tray = null
@@ -104,7 +102,7 @@ function scheduleSaveBounds() {
 
 function isInternalUrl(url) {
   try {
-    return new URL(url).origin === new URL(config.serverUrl).origin
+    return new URL(url).origin === new URL(SERVER_URL).origin
   } catch {
     return false
   }
@@ -165,7 +163,7 @@ function showConnectionError(errorCode, errorDescription) {
   const page = path.join(__dirname, 'error.html')
   mainWindow.loadFile(page, {
     query: {
-      url: config.serverUrl,
+      url: SERVER_URL,
       code: String(errorCode),
       desc: errorDescription || 'unknown',
     },
@@ -174,7 +172,7 @@ function showConnectionError(errorCode, errorDescription) {
 
 function loadApp() {
   if (!mainWindow || mainWindow.isDestroyed()) return
-  mainWindow.loadURL(config.serverUrl).catch((err) => {
+  mainWindow.loadURL(SERVER_URL).catch((err) => {
     // did-fail-load 一般已经覆盖了，这里兜底避免出现未捕获的 rejection
     console.warn('[app] 加载失败：', err.message)
   })
@@ -212,7 +210,7 @@ function createWindow() {
   // 先隐藏再显示，避免远程页面加载期间出现一大片白屏
   mainWindow.once('ready-to-show', () => {
     mainWindow.show()
-    if (config.openDevTools) mainWindow.webContents.openDevTools({ mode: 'detach' })
+    if (OPEN_DEVTOOLS) mainWindow.webContents.openDevTools({ mode: 'detach' })
   })
   // 远程站点偶尔不触发 ready-to-show，兜一个超时，别让窗口一直不出现
   const showFallback = setTimeout(() => {
@@ -297,10 +295,9 @@ function createTray() {
   tray.setToolTip(APP_TITLE)
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: '打开拾忆', click: showMainWindow },
-    { label: '在浏览器中打开', click: () => openExternal(config.serverUrl) },
+    { label: '在浏览器中打开', click: () => openExternal(SERVER_URL) },
     { type: 'separator' },
     { label: '重新加载', click: () => { showMainWindow(); mainWindow.webContents.reload() } },
-    { label: '打开配置文件', click: () => shell.openPath(getConfigPath()) },
     { type: 'separator' },
     { label: '退出', click: () => { isQuitting = true; app.quit() } },
   ]))
@@ -315,8 +312,7 @@ function buildMenu() {
     {
       label: APP_TITLE,
       submenu: [
-        { label: '在浏览器中打开', click: () => openExternal(config.serverUrl) },
-        { label: '打开配置文件', click: () => shell.openPath(getConfigPath()) },
+        { label: '在浏览器中打开', click: () => openExternal(SERVER_URL) },
         { type: 'separator' },
         { label: '退出', click: () => { isQuitting = true; app.quit() } },
       ],
@@ -353,7 +349,6 @@ function buildMenu() {
 /* ------------------------------------------------------------------------- 启动 */
 
 function bootstrap() {
-  ensureConfigFile()
   buildMenu()
   createWindow()
   createTray()
