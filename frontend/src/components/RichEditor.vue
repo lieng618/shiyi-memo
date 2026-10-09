@@ -39,9 +39,10 @@
   import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from 'vue'
   import { ElMessage } from 'element-plus'
   import { Editor, Toolbar } from '@wangeditor/editor-for-vue'
-  import { Boot, SlateElement, SlateTransforms } from '@wangeditor/editor'
+  import { Boot, DomEditor, SlateElement, SlateTransforms } from '@wangeditor/editor'
   import type { IButtonMenu, IDomEditor, IEditorConfig, IToolbarConfig } from '@wangeditor/editor'
   import { fileApi } from '@/api'
+  import { copyText } from '@/utils/clipboard'
   import type { FileAsset } from '@/types'
 
   type InsertImageFnType = (url: string, alt: string, href: string) => void
@@ -74,6 +75,47 @@
 
     exec(): void {
       triggerStore.__shiyiAttachmentTrigger?.trigger()
+    }
+  }
+
+  /**
+   * 复制链接菜单：出现的位置和内置的 editLink / unLink / viewLink 一致（悬停/选中超链接时的悬浮条），
+   * 取链接 url 的方式也照搬内置 ViewLink（DomEditor.getSelectedNodeByType），保证启用条件完全对齐。
+   */
+  class CopyLinkMenu implements IButtonMenu {
+    readonly title = '复制链接'
+    readonly tag = 'button'
+    readonly iconSvg =
+      '<svg viewBox="0 0 1024 1024"><path d="M768 832a128 128 0 0 1-128 128H192A128 128 0 0 1 64 832V384a128 128 0 0 1 128-128v64a64 64 0 0 0-64 64v448a64 64 0 0 0 64 64h448a64 64 0 0 0 64-64z"></path><path d="M384 128a64 64 0 0 0-64 64v448a64 64 0 0 0 64 64h448a64 64 0 0 0 64-64V192a64 64 0 0 0-64-64zm0-64h448a128 128 0 0 1 128 128v448a128 128 0 0 1-128 128H384a128 128 0 0 1-128-128V192A128 128 0 0 1 384 64z"></path></svg>'
+
+    /** 取当前选区所在的 link 节点，和内置 ViewLink 用同一套判断 */
+    private getSelectedLinkElem(editor: IDomEditor): { url?: string } | null {
+      return DomEditor.getSelectedNodeByType(editor, 'link') as { url?: string } | null
+    }
+
+    getValue(editor: IDomEditor): string {
+      return this.getSelectedLinkElem(editor)?.url || ''
+    }
+
+    isActive(): boolean {
+      return false
+    }
+
+    isDisabled(editor: IDomEditor): boolean {
+      return editor.selection == null || this.getSelectedLinkElem(editor) == null
+    }
+
+    exec(editor: IDomEditor, value: string | boolean): void {
+      if (this.isDisabled(editor)) return
+      const url = typeof value === 'string' ? value : ''
+      if (!url) {
+        ElMessage.warning('没有可复制的链接')
+        return
+      }
+      void copyText(url).then(
+        () => ElMessage.success('已复制链接'),
+        () => ElMessage.error('复制失败，请手动复制'),
+      )
     }
   }
 
@@ -119,6 +161,7 @@
   try {
     // vite HMR 会重复执行模块，重复注册直接忽略
     Boot.registerMenu({ key: 'shiyiUploadAttachment', factory: () => new UploadAttachmentMenu() })
+    Boot.registerMenu({ key: 'shiyiCopyLink', factory: () => new CopyLinkMenu() })
     for (const { key, title, format } of EXPORT_MENUS) {
       Boot.registerMenu({ key, factory: () => new ExportNoteMenu(title, format) })
     }
@@ -271,6 +314,11 @@
   // 编辑器配置
   const editorConfig: Partial<IEditorConfig> = {
     placeholder: props.placeholder,
+    // 超链接悬浮条：在默认的「编辑 / 取消链接 / 打开链接」前面加一个「复制链接」。
+    // 这里只覆盖 link，其余（text / image / table 等）沿用 wangEditor 默认配置。
+    hoverbarKeys: {
+      link: { menuKeys: ['shiyiCopyLink', 'editLink', 'unLink', 'viewLink'] },
+    },
     MENU_CONF: {
       uploadImage: {
         async customUpload(file: File, insertFn: InsertImageFnType) {
