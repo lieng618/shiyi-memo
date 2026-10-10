@@ -134,13 +134,16 @@ function loadMore() {
 .messages-page {
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
-  min-height: 100dvh;
+  /* 固定整页高度：顶栏不动，只有列表区自己滚 */
+  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
   background: var(--bg);
 }
 
 .messages-body {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
 }
 

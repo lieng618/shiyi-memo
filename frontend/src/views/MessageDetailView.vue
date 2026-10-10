@@ -121,13 +121,16 @@ function openPreview(file: FileAsset) {
 .message-detail-page {
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
-  min-height: 100dvh;
+  /* 固定整页高度：顶栏不动，只有正文区自己滚 */
+  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
   background: var(--bg);
 }
 
 .detail-body {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
 }
 

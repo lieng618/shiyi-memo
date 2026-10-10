@@ -24,6 +24,11 @@ const router = useRouter()
 
 <style scoped>
 .page-header {
+  /* 页面整体滚动时（有些页面没有自己的滚动容器），顶栏要始终停在窗口顶部，
+     否则往下滑就看不到返回按钮，用户得先滑回顶部才能退出 */
+  position: sticky;
+  top: 0;
+  z-index: 20;
   display: flex;
   align-items: center;
   gap: var(--space-3);

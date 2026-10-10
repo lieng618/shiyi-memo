@@ -46,8 +46,11 @@
 .adm-shell {
   display: grid;
   grid-template-columns: 236px 1fr;
-  min-height: 100vh;
-  min-height: 100dvh;
+  /* 两列各自占满整页高度，行高被钉死，长内容才会落到内容区自己的滚动条上 */
+  grid-template-rows: minmax(0, 1fr);
+  /* 固定整页高度：侧栏和页头不动，只有内容区自己滚 */
+  height: 100vh;
+  height: 100dvh;
   background: var(--bg);
 }
 
@@ -55,6 +58,8 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
+  /* 侧栏高度被固定后，条目多或者窗口矮时自己滚，别把「退出登录」挤没 */
+  overflow-y: auto;
   padding: var(--space-5) var(--space-3);
   background: #1f1e1b;
   color: #e9e5de;
@@ -107,6 +112,7 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
+  min-height: 0;
   background: var(--bg);
 }
 
@@ -231,6 +237,8 @@
 @media (max-width: 900px) {
   .adm-shell {
     grid-template-columns: 1fr;
+    /* 窄屏变成上下两行：导航一行、内容区占满剩下的高度 */
+    grid-template-rows: auto minmax(0, 1fr);
   }
 
   .adm-nav {

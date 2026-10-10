@@ -475,13 +475,17 @@ async function logout() {
 .profile-page {
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
-  min-height: 100dvh;
+  /* 固定整页高度：顶栏不动，只有内容区自己滚，
+     这样往下滑也一直看得到「个人中心」和返回按钮 */
+  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
   background: var(--bg);
 }
 
 .profile-body {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
 }
 
