@@ -3,6 +3,7 @@
 const {
   app, BrowserWindow, Menu, Tray, shell, ipcMain, nativeImage, nativeTheme, screen, dialog, session,
 } = require('electron')
+const { autoUpdater } = require('electron-updater')
 const fs = require('node:fs')
 const path = require('node:path')
 
@@ -31,6 +32,8 @@ let tray = null
 let isQuitting = false
 let trayHintShown = false
 let saveTimer = null
+/** 最近一次的更新状态，渲染层打开晚了也能补上 */
+let updateState = { state: 'idle' }
 
 function titleBarOptions(dark) {
   return { ...(dark ? TITLE_BAR_THEME.dark : TITLE_BAR_THEME.light), height: TITLE_BAR_HEIGHT }
@@ -346,6 +349,61 @@ function buildMenu() {
   ]))
 }
 
+/* -------------------------------------------------------------------- 自动更新 */
+
+function pushUpdateState(patch) {
+  updateState = { ...updateState, ...patch }
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('app:update-state', updateState)
+  }
+}
+
+/**
+ * 更新包放在站点自己的 /downloads 目录下（见 package.json 的 publish 配置），
+ * electron-builder 会据此在 resources 里生成 app-update.yml，运行时照着地址去取。
+ */
+function setupUpdater() {
+  // 开发环境既没有 app-update.yml 也没有安装包可换
+  if (!app.isPackaged) return
+
+  // 只检查不下载：下载由用户点「更新」触发，免得写到一半被打断
+  autoUpdater.autoDownload = false
+  autoUpdater.autoInstallOnAppQuit = true
+
+  autoUpdater.on('checking-for-update', () => pushUpdateState({ state: 'checking' }))
+  autoUpdater.on('update-available', (info) => pushUpdateState({ state: 'available', version: info && info.version }))
+  autoUpdater.on('update-not-available', () => pushUpdateState({ state: 'up-to-date' }))
+  autoUpdater.on('download-progress', (progress) => pushUpdateState({
+    state: 'downloading',
+    percent: Math.round((progress && progress.percent) || 0),
+  }))
+  autoUpdater.on('update-downloaded', (info) => pushUpdateState({ state: 'downloaded', version: info && info.version }))
+  autoUpdater.on('error', (err) => pushUpdateState({ state: 'error', message: String((err && err.message) || err) }))
+
+  checkForUpdates()
+}
+
+/** 静默检查一次，失败（断网之类）不打扰用户 */
+function checkForUpdates() {
+  if (!app.isPackaged) {
+    return Promise.resolve({ ok: false, unsupported: true })
+  }
+  return autoUpdater.checkForUpdates().then(
+    () => ({ ok: true }),
+    (err) => ({ ok: false, message: String((err && err.message) || err) }),
+  )
+}
+
+function startUpdateDownload() {
+  if (!app.isPackaged) {
+    return Promise.resolve({ ok: false, unsupported: true })
+  }
+  return autoUpdater.downloadUpdate().then(
+    () => ({ ok: true }),
+    (err) => ({ ok: false, message: String((err && err.message) || err) }),
+  )
+}
+
 /* ------------------------------------------------------------------------- 启动 */
 
 function bootstrap() {
@@ -353,6 +411,7 @@ function bootstrap() {
   createWindow()
   createTray()
   setupDownloads()
+  setupUpdater()
 
   app.on('second-instance', showMainWindow)
 
@@ -371,6 +430,22 @@ function bootstrap() {
 ipcMain.on('app:retry', () => {
   loadApp()
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.show()
+})
+
+// preload 启动时同步取一次外壳版本号
+ipcMain.on('app:get-version', (event) => {
+  event.returnValue = app.getVersion()
+})
+
+ipcMain.handle('app:check-update', () => checkForUpdates())
+
+ipcMain.handle('app:start-update', () => startUpdateDownload())
+
+ipcMain.handle('app:get-update-state', () => updateState)
+
+ipcMain.on('app:install-update', () => {
+  isQuitting = true
+  autoUpdater.quitAndInstall()
 })
 
 ipcMain.on('app:quit', () => {

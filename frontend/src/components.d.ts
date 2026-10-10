@@ -45,6 +45,7 @@ declare module 'vue' {
     RichEditor: typeof import('./components/RichEditor.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
+    UpdaterOverlay: typeof import('./components/UpdaterOverlay.vue')['default']
     UserAvatar: typeof import('./components/UserAvatar.vue')['default']
   }
   export interface GlobalDirectives {

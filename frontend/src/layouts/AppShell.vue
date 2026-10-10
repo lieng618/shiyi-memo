@@ -6,16 +6,27 @@ import { friendApi, messageApi } from '@/api'
 import type { FriendNotification, UserMessage } from '@/types'
 import { useAuthStore } from '@/stores/auth'
 import { useCreateNote } from '@/composables/useCreateNote'
+import { useAppVersion } from '@/composables/useAppVersion'
+import { useUpdater } from '@/composables/useUpdater'
 import { useFriendSummary } from '@/composables/useFriendSummary'
 import { useUnreadMessages } from '@/composables/useUnreadMessages'
 import { onRealtime } from '@/composables/useRealtime'
 import { formatFull } from '@/utils/format'
 import UserAvatar from '@/components/UserAvatar.vue'
 import OpenShareDialog from '@/components/OpenShareDialog.vue'
+import UpdaterOverlay from '@/components/UpdaterOverlay.vue'
 
 const auth = useAuthStore()
 const router = useRouter()
 const createNote = useCreateNote()
+// 部署即生效，发现新版就提示刷新
+const { outdated: versionOutdated, reload: reloadForUpdate } = useAppVersion()
+const {
+  supported: updaterSupported,
+  hasUpdate: clientUpdateReady,
+  version: clientNewVersion,
+  startUpdate: startClientUpdate,
+} = useUpdater()
 const { unread, refresh: refreshUnread } = useUnreadMessages()
 const {
   total: friendUnread,
@@ -268,11 +279,24 @@ async function onNew() {
       </div>
     </header>
 
+    <!-- 服务器发了新版本，刷一下就能拿到 -->
+    <div v-if="versionOutdated" class="update-banner" role="status">
+      <span>网站已更新到新版本</span>
+      <el-button size="small" type="primary" @click="reloadForUpdate">立即刷新</el-button>
+    </div>
+
+    <!-- 客户端有新版本：点一下就下载、安装、重启 -->
+    <div v-else-if="updaterSupported && clientUpdateReady" class="update-banner" role="status">
+      <span>客户端有新版本 {{ clientNewVersion }}</span>
+      <el-button size="small" type="primary" @click="startClientUpdate">更新</el-button>
+    </div>
+
     <main class="shell-content">
       <router-view />
     </main>
 
     <OpenShareDialog v-model="shareOpen" />
+    <UpdaterOverlay />
   </div>
 </template>
 
@@ -283,6 +307,18 @@ async function onNew() {
   min-height: 100vh;
   min-height: 100dvh;
   background: var(--bg);
+}
+
+/* 新版本提示条 */
+.update-banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-6);
+  background: var(--brand-soft);
+  color: var(--brand);
+  font-size: 13px;
 }
 
 .shell-header {

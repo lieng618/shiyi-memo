@@ -38,10 +38,41 @@ npm run dist
 | 文件 | 说明 |
 | --- | --- |
 | `shiyi-memo-setup-<版本>.exe` | NSIS 安装包，可选安装目录，建桌面和开始菜单快捷方式 |
-| `shiyi-memo-<版本>-portable.exe` | 免安装单文件版，双击即用 |
 | `win-unpacked/` | 未压缩的绿色目录，方便排查问题 |
 
 只想快速验证不生成安装包，用 `npm run dist:dir`。
+
+只发 NSIS 安装版：免安装版没有安装过程，接不了自动更新。
+
+## 发布新版本
+
+一条命令搞定：
+
+```powershell
+cd desktop
+.\publish.ps1 -Version 1.1.0
+```
+
+它做的事：把版本号写进 `package.json` → 打包 → 把下面三个文件传到服务器的下载目录
+→ 在服务器上拷一份固定文件名的副本给网页的「下载桌面端」用。
+
+```
+shiyi-memo-setup-<版本>.exe            安装包
+shiyi-memo-setup-<版本>.exe.blockmap   差量更新用，别漏
+latest.yml                             客户端读的更新清单
+```
+
+| 参数 | 说明 |
+| --- | --- |
+| 不带参数 | 用当前版本号重新打包并上传 |
+| `-Version 1.1.0` | 先把版本号改成 1.1.0 |
+| `-SkipUpload` | 只打包，不传服务器 |
+| `-SkipBuild` | 用 `release\` 里已有的产物，只上传 |
+| `-Server` / `-RemoteDir` | 覆盖默认的服务器地址和下载目录 |
+
+版本号只有 `package.json` 这一处——后端会去下载目录读 `latest.yml` 拿最新版本
+（想手动指定才用 `application.yml` 的 `app.desktop.latest-version`）。
+客户端启动后自己检查，有新版就在顶部提示，点一下就下载、安装并重启。
 
 ## 改服务器地址
 
@@ -72,6 +103,10 @@ desktop/
 ## 已实现的行为
 
 - 单实例：重复点图标会把已有窗口唤到前面
+- 版本号可见：preload 把外壳版本交给网页（`window.shiyi.version`），个人中心据此显示
+  「当前版本」并和服务器上的最新版比对
+- 自动更新：启动后静默检查 `latest.yml`，有新版就在顶部提示；用户点「更新」后
+  在应用内下载并显示进度，装完自动重启（重启前会等笔记的编辑先落库）
 - 无边框窗口：不要系统那条标题栏，颜色跟站点走，系统只保留右上角的最小化 /
   最大化 / 关闭。站点切换深浅色时，那三个按钮的底色也跟着换
   （站点调用 `window.shiyi.setTheme` 通知外壳）
@@ -104,8 +139,8 @@ desktop/
 - **全局快捷键随手记**（需求方明确要求先不做）
 - **代码签名**：当前 exe 未签名，用户首次运行会被 Windows SmartScreen 拦一次，
   需要「更多信息 → 仍要运行」。要消除需要购买 OV/EV 代码签名证书。
-- **自动更新**：外壳本身更新需要用户手动装新版本。
-  前端不在此列——前端改完部署到服务器即可，用户无感。
+- **自动更新的签名**：自动更新本身不需要签名，但用户首次从浏览器下载安装包时
+  仍会吃一次 SmartScreen。
 - **系统通知 / 屏幕截图**：站点走 HTTPS 时属于 secure context，可以直接用。
   如果哪天部署回 `http://`，这类能力会被浏览器限制，需要加
   `app.commandLine.appendSwitch('unsafely-treat-insecure-origin-as-secure', '<站点地址>')`

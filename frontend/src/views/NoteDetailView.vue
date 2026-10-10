@@ -9,6 +9,9 @@ import { debounce } from '@/composables/useDebounce'
 import { exportNote, type ExportFormat } from '@/utils/noteExport'
 import RichEditor, { exportTriggerStore } from '@/components/RichEditor.vue'
 
+/** 外壳自动更新重启前会调这个，把防抖里还没发出去的编辑先落库 */
+const flushBridge = globalThis as unknown as { __shiyiFlushEdits?: (() => Promise<void>) | null }
+
 const route = useRoute()
 const router = useRouter()
 
@@ -58,6 +61,10 @@ onMounted(async () => {
   // 编辑器工具栏的「导出」分组菜单通过这个桥接调到本页的导出逻辑。
   // 必须在编辑器挂载（loading 结束后）之前就绪，否则工具栏会判定导出不可用。
   exportTriggerStore.__shiyiExportNote = onExport
+  flushBridge.__shiyiFlushEdits = async () => {
+    scheduleSave.cancel()
+    if (dirty.value) await save()
+  }
   await Promise.all([loadDetail(), loadTags()])
   window.addEventListener('keydown', onKeydown)
   await nextTick()
@@ -66,6 +73,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   exportTriggerStore.__shiyiExportNote = null
+  flushBridge.__shiyiFlushEdits = null
   window.removeEventListener('keydown', onKeydown)
   scheduleSave.cancel()
 })

@@ -27,16 +27,20 @@
       "src/**/*",
       "package.json"
     ],
+    "publish": [
+      {
+        "provider": "generic",
+        "url": "https://memo.goldminer.cloud/downloads/"
+      }
+    ],
     "win": {
       "icon": "build/icon.png",
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
-        },
-        {
-          "target": "portable",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ]
     },
@@ -48,9 +52,9 @@
       "createStartMenuShortcut": true,
       "shortcutName": "拾忆",
       "artifactName": "shiyi-memo-setup-${version}.${ext}"
-    },
-    "portable": {
-      "artifactName": "shiyi-memo-${version}-portable.${ext}"
     }
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9"
   }
 }
