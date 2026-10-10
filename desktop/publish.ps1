@@ -6,12 +6,14 @@
 #   .\publish.ps1 -SkipBuild       用 release\ 里已有的产物，只上传
 #   .\publish.ps1 -SkipUpload      只打包，不传服务器
 #
-# 前提：本机能直接 scp / ssh 到服务器（配好免密，或者接受手动输密码）。
+# 前提：本机能 scp / ssh 到服务器。默认用 ubuntu 账号（腾讯云 Ubuntu 镜像的登录账号，
+# root 的 SSH 登录默认是关的，所以别改成 root@）。配好 SSH 公钥就不用每次输密码。
 
 [CmdletBinding()]
 param(
     [string]$Version,
-    [string]$Server = 'root@49.232.236.230',
+    # 腾讯云 Ubuntu 镜像的登录账号是 ubuntu，root 的 SSH 登录默认是关的
+    [string]$Server = 'ubuntu@49.232.236.230',
     [string]$RemoteDir = '/home/shiyi-memo/start/downloads',
     [switch]$SkipBuild,
     [switch]$SkipUpload
@@ -90,16 +92,30 @@ foreach ($tool in @('scp', 'ssh')) {
 }
 
 Write-Host "==> 上传到 ${Server}:${RemoteDir}" -ForegroundColor Cyan
-# 第一次跑的时候目录还不存在，scp 不会自己建
-ssh $Server "mkdir -p '$RemoteDir'"
-if ($LASTEXITCODE -ne 0) { throw '连接服务器失败，检查地址和 SSH 免密' }
+# 部署时这个目录多半是 root 建的，先探一下当前账号能不能直接写
+ssh $Server "mkdir -p '$RemoteDir' 2>/dev/null && test -w '$RemoteDir'"
+$canWriteDirectly = ($LASTEXITCODE -eq 0)
 
-scp $artifacts ($Server + ':' + $RemoteDir + '/')
-if ($LASTEXITCODE -ne 0) { throw '上传失败，检查服务器地址和 SSH 免密' }
+if ($canWriteDirectly) {
+    scp $artifacts ($Server + ':' + $RemoteDir + '/')
+    if ($LASTEXITCODE -ne 0) { throw '上传失败，检查服务器地址和 SSH 登录' }
+    # 网页上那个「下载桌面端」指向固定文件名，在服务器上拷一份，省得再传 100MB
+    ssh $Server "cp '$RemoteDir/$installer' '$RemoteDir/shiyi-memo-setup.exe'"
+    if ($LASTEXITCODE -ne 0) { throw '生成固定文件名副本失败' }
+} else {
+    # 目录属于 root：先传到 ubuntu 能写的临时目录，再用 sudo 搬进去。
+    # -t 是为了让 sudo 需要密码时有地方弹提示。
+    Write-Host '这个目录当前账号写不了，改用 sudo 搬运（可能要输一次 sudo 密码）' -ForegroundColor Yellow
+    $staging = '/tmp/shiyi-memo-release'
+    ssh $Server "rm -rf '$staging' && mkdir -p '$staging'"
+    if ($LASTEXITCODE -ne 0) { throw '连接服务器失败，检查地址和 SSH 登录' }
 
-# 网页上那个「下载桌面端」指向固定文件名，在服务器上拷一份，省得再传 100MB
-ssh $Server "cp '$RemoteDir/$installer' '$RemoteDir/shiyi-memo-setup.exe'"
-if ($LASTEXITCODE -ne 0) { throw '生成固定文件名副本失败' }
+    scp $artifacts ($Server + ':' + $staging + '/')
+    if ($LASTEXITCODE -ne 0) { throw '上传到服务器临时目录失败' }
+
+    ssh -t $Server "sudo mkdir -p '$RemoteDir' && sudo mv '$staging'/* '$RemoteDir'/ && sudo chmod 644 '$RemoteDir'/* && sudo cp '$RemoteDir/$installer' '$RemoteDir/shiyi-memo-setup.exe' && rm -rf '$staging'"
+    if ($LASTEXITCODE -ne 0) { throw 'sudo 搬运失败' }
+}
 
 Write-Host ''
 Write-Host "发布完成：$current" -ForegroundColor Green

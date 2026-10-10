@@ -70,6 +70,22 @@ latest.yml                             客户端读的更新清单
 | `-SkipBuild` | 用 `release\` 里已有的产物，只上传 |
 | `-Server` / `-RemoteDir` | 覆盖默认的服务器地址和下载目录 |
 
+### 服务器上的前提
+
+脚本默认走 `ubuntu` 账号——腾讯云 Ubuntu 镜像的登录账号，`root` 的 SSH 登录默认是关的
+（所以能 `su` 进 root，但 `ssh root@` 连不上）。别改回 `root@`。
+
+下载目录如果是 root 建的（用 root 部署过就会这样），脚本会自动退回「先传到临时目录、
+再用 `sudo` 搬进去」，中间可能让你输一次 ubuntu 的密码。想彻底免掉，在服务器上跑一次：
+
+```bash
+sudo mkdir -p /home/shiyi-memo/start/downloads
+sudo chown ubuntu:ubuntu /home/shiyi-memo/start/downloads
+```
+
+再把本机的 SSH 公钥加到服务器的 `~/.ssh/authorized_keys`，以后就是真正的一键，
+密码和 sudo 都不用输。
+
 版本号只有 `package.json` 这一处——后端会去下载目录读 `latest.yml` 拿最新版本
 （想手动指定才用 `application.yml` 的 `app.desktop.latest-version`）。
 客户端启动后自己检查，有新版就在顶部提示，点一下就下载、安装并重启。
