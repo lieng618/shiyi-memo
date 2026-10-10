@@ -6,15 +6,18 @@
 #   .\publish.ps1 -SkipBuild       用 release\ 里已有的产物，只上传
 #   .\publish.ps1 -SkipUpload      只打包，不传服务器
 #
-# 前提：本机能 scp / ssh 到服务器。默认用 ubuntu 账号（腾讯云 Ubuntu 镜像的登录账号，
-# root 的 SSH 登录默认是关的，所以别改成 root@）。配好 SSH 公钥就不用每次输密码。
+# 发布目标（服务器地址和目录）每个人都不一样，所以不写死在脚本里：
+# 把 publish.local.psd1.example 复制成 publish.local.psd1 填好，或者用
+# -Server / -RemoteDir 直接传。前者已经在 .gitignore 里，不会被提交。
+#
+# 前提：本机能 scp / ssh 到服务器；配好 SSH 公钥就不用每次输密码。
 
 [CmdletBinding()]
 param(
     [string]$Version,
-    # 腾讯云 Ubuntu 镜像的登录账号是 ubuntu，root 的 SSH 登录默认是关的
-    [string]$Server = 'ubuntu@49.232.236.230',
-    [string]$RemoteDir = '/home/shiyi-memo/start/downloads',
+    # 形如 ubuntu@1.2.3.4，不传就读 publish.local.psd1
+    [string]$Server,
+    [string]$RemoteDir,
     [switch]$SkipBuild,
     [switch]$SkipUpload
 )
@@ -23,6 +26,27 @@ $ErrorActionPreference = 'Stop'
 $root = $PSScriptRoot
 $packagePath = Join-Path $root 'package.json'
 $releaseDir = Join-Path $root 'release'
+
+# ---- 发布目标：参数 > publish.local.psd1 > 环境变量 ----
+if (-not $SkipUpload) {
+    $localConfigPath = Join-Path $root 'publish.local.psd1'
+    $localConfig = @{}
+    if (Test-Path -LiteralPath $localConfigPath) {
+        $localConfig = Import-PowerShellDataFile -Path $localConfigPath
+    }
+    if (-not $Server) { $Server = $localConfig.Server }
+    if (-not $RemoteDir) { $RemoteDir = $localConfig.RemoteDir }
+    if (-not $Server) { $Server = $env:SHIYI_PUBLISH_SERVER }
+    if (-not $RemoteDir) { $RemoteDir = $env:SHIYI_PUBLISH_REMOTE_DIR }
+
+    if (-not $Server -or -not $RemoteDir) {
+        throw @"
+没配置发布目标。二选一：
+  1. 把 publish.local.psd1.example 复制成 publish.local.psd1，填上你的服务器和目录
+  2. 直接传参：.\publish.ps1 -Server 账号@服务器 -RemoteDir /服务器上的目录
+"@
+    }
+}
 
 # ---- 版本号只有 package.json 一处，后端会去读传上去的 latest.yml ----
 # 必须显式按 UTF-8 读：Windows PowerShell 5.1 的 Get-Content 会把没有 BOM 的

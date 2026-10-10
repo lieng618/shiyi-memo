@@ -68,23 +68,49 @@ latest.yml                             客户端读的更新清单
 | `-Version 1.1.0` | 先把版本号改成 1.1.0 |
 | `-SkipUpload` | 只打包，不传服务器 |
 | `-SkipBuild` | 用 `release\` 里已有的产物，只上传 |
-| `-Server` / `-RemoteDir` | 覆盖默认的服务器地址和下载目录 |
+| `-Server` / `-RemoteDir` | 临时覆盖发布目标，不用改配置文件 |
 
-### 服务器上的前提
+### 配置发布目标
 
-脚本默认走 `ubuntu` 账号——腾讯云 Ubuntu 镜像的登录账号，`root` 的 SSH 登录默认是关的
-（所以能 `su` 进 root，但 `ssh root@` 连不上）。别改回 `root@`。
+服务器地址和目录因人而异，所以不写在脚本里。把 `publish.local.psd1.example` 复制成
+`publish.local.psd1` 填上即可（这个文件名在 `.gitignore` 里，不会被提交）：
+
+```powershell
+@{
+    Server    = 'ubuntu@1.2.3.4'
+    RemoteDir = '/home/your-app/start/downloads'
+}
+```
+
+也可以用环境变量 `SHIYI_PUBLISH_SERVER` / `SHIYI_PUBLISH_REMOTE_DIR`。
+没配就直接跑，脚本会在打包之前报错并告诉你怎么配。
+
+账号别填 `root@`：云上的 Ubuntu 镜像默认关掉 root 的 SSH 登录（能 `su` 进 root，
+但 `ssh root@` 连不上），填日常登录账号（通常是 `ubuntu`）就行。
 
 下载目录如果是 root 建的（用 root 部署过就会这样），脚本会自动退回「先传到临时目录、
-再用 `sudo` 搬进去」，中间可能让你输一次 ubuntu 的密码。想彻底免掉，在服务器上跑一次：
+再用 `sudo` 搬进去」，中间可能让你输一次密码。想彻底免掉，在服务器上跑一次：
 
 ```bash
-sudo mkdir -p /home/shiyi-memo/start/downloads
-sudo chown ubuntu:ubuntu /home/shiyi-memo/start/downloads
+sudo mkdir -p <RemoteDir>
+sudo chown ubuntu:ubuntu <RemoteDir>
 ```
 
 再把本机的 SSH 公钥加到服务器的 `~/.ssh/authorized_keys`，以后就是真正的一键，
 密码和 sudo 都不用输。
+
+### 换到自己的服务器要改哪些
+
+脚本只是其中一处，整套站点相关的值散在下面这些地方，自建时都要改：
+
+| 位置 | 改什么 |
+| --- | --- |
+| `publish.local.psd1` | 发布目标（本文件，不进仓库） |
+| `src/config.js` | `SERVER_URL`：外壳加载哪个站点 |
+| `package.json` → `build.publish[0].url` | 更新包从哪取，要和下载地址一致 |
+| `package.json` → `appId` / `productName` | 应用标识和显示名 |
+| 后端 `application.yml` → `app.base-url` | 站点对外地址，`/api/version` 用它拼下载地址 |
+| `ecosystem.config.js` → `APP_DIR` / `APP_JAR` | 服务器上的应用目录和 jar 名 |
 
 版本号只有 `package.json` 这一处——后端会去下载目录读 `latest.yml` 拿最新版本
 （想手动指定才用 `application.yml` 的 `app.desktop.latest-version`）。

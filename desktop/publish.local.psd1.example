@@ -1,0 +1,12 @@
+# 发布目标配置模板。
+# 复制成 publish.local.psd1 填上自己的值——这个文件名在 .gitignore 里，不会提交。
+# 也可以不改文件，直接用 .\publish.ps1 -Server ... -RemoteDir ... 传参。
+@{
+    # SSH 登录用哪个账号。腾讯云的 Ubuntu 镜像登录账号是 ubuntu，
+    # 而 root 的 SSH 登录默认是关的（能 su 进 root，但 ssh root@ 连不上）。
+    Server = 'ubuntu@1.2.3.4'
+
+    # 服务器上存放安装包的目录，对应后端的 app.desktop.download-dir。
+    # 它由 Spring 直接对外发，客户端从这里取 latest.yml。
+    RemoteDir = '/home/your-app/start/downloads'
+}
