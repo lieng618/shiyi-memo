@@ -23,7 +23,9 @@ $packagePath = Join-Path $root 'package.json'
 $releaseDir = Join-Path $root 'release'
 
 # ---- 版本号只有 package.json 一处，后端会去读传上去的 latest.yml ----
-$raw = Get-Content -LiteralPath $packagePath -Raw
+# 必须显式按 UTF-8 读：Windows PowerShell 5.1 的 Get-Content 会把没有 BOM 的
+# UTF-8 当 ANSI 解，package.json 里的中文会变乱码，还会把后面的引号一起吃掉
+$raw = [System.IO.File]::ReadAllText($packagePath)
 $versionPattern = [regex]'"version"\s*:\s*"([^"]+)"'
 $current = $versionPattern.Match($raw).Groups[1].Value
 if (-not $current) { throw '没能从 package.json 里读出 version' }
@@ -36,6 +38,12 @@ if ($Version) {
         Write-Host "版本号没变（还是 $current）" -ForegroundColor Yellow
     } else {
         $updated = $versionPattern.Replace($raw, '"version": "' + $Version + '"', 1)
+        # 写回去之前先确认还是合法 JSON，改坏了就宁可什么都不动
+        try {
+            $null = $updated | ConvertFrom-Json
+        } catch {
+            throw "改完版本号后 package.json 不是合法 JSON，已放弃写入：$($_.Exception.Message)"
+        }
         [System.IO.File]::WriteAllText($packagePath, $updated, [System.Text.UTF8Encoding]::new($false))
         Write-Host "版本号：$current → $Version" -ForegroundColor Green
     }
