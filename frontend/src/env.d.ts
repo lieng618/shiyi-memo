@@ -16,8 +16,14 @@ interface Window {
   shiyi?: {
     /** 外壳版本号，来自 desktop/package.json */
     version?: string
-    /** 检查有没有新版本（只查不下载） */
-    checkUpdate?: () => Promise<{ ok: boolean; message?: string; unsupported?: boolean }>
+    /** 检查有没有新版本（只查不下载）；结论由主进程等事件拿到后返回 */
+    checkUpdate?: () => Promise<{
+      ok: boolean
+      hasUpdate?: boolean
+      version?: string
+      message?: string
+      unsupported?: boolean
+    }>
     /** 开始下载新版本 */
     startUpdate?: () => Promise<{ ok: boolean; message?: string; unsupported?: boolean }>
     /** 取一次当前更新状态 */

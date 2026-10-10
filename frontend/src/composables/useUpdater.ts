@@ -38,25 +38,11 @@ async function flushPendingEdits() {
   }
 }
 
-/**
- * 触发一次检查，并等到有结论再返回。
- * electron-updater 是事件式的，checkForUpdates() 不会同步给出结果，只能等状态推回来。
- */
-async function checkAndWait(timeout = 15000): Promise<'available' | 'latest' | 'error'> {
-  const before = state.value.state
+/** 触发一次检查；结论由主进程等事件拿到后直接返回，不走状态轮询 */
+async function checkAndWait(): Promise<'available' | 'latest' | 'error'> {
   const result = await (window.shiyi?.checkUpdate?.() ?? Promise.resolve({ ok: false }))
   if (!result?.ok) return 'error'
-
-  const deadline = Date.now() + timeout
-  while (Date.now() < deadline) {
-    const phase = state.value.state
-    if (phase === 'available') return 'available'
-    if (phase === 'error') return 'error'
-    // 状态没动过就说明还是上一次的结论，继续等这一次的
-    if (phase === 'up-to-date' && phase !== before) return 'latest'
-    await sleep(150)
-  }
-  return 'error'
+  return result.hasUpdate ? 'available' : 'latest'
 }
 
 /** 桌面端自动更新：检查 → 下载 → 重启安装 */

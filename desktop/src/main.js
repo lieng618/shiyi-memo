@@ -359,8 +359,8 @@ function pushUpdateState(patch) {
 }
 
 /**
- * 更新包放在站点自己的 /downloads 目录下（见 package.json 的 publish 配置），
- * electron-builder 会据此在 resources 里生成 app-update.yml，运行时照着地址去取。
+ * 更新源地址在 package.json 的 publish 里配好，electron-builder 会据此在 resources
+ * 里生成 app-update.yml，运行时照着那个地址去取 latest.yml。
  */
 function setupUpdater() {
   // 开发环境既没有 app-update.yml 也没有安装包可换
@@ -383,15 +383,34 @@ function setupUpdater() {
   checkForUpdates()
 }
 
-/** 静默检查一次，失败（断网之类）不打扰用户 */
-function checkForUpdates() {
-  if (!app.isPackaged) {
-    return Promise.resolve({ ok: false, unsupported: true })
+/** a 是否比 b 新 */
+function isNewer(a, b) {
+  const left = String(a).split('.').map((part) => parseInt(part, 10) || 0)
+  const right = String(b).split('.').map((part) => parseInt(part, 10) || 0)
+  for (let i = 0; i < Math.max(left.length, right.length); i += 1) {
+    const diff = (left[i] || 0) - (right[i] || 0)
+    if (diff !== 0) return diff > 0
   }
-  return autoUpdater.checkForUpdates().then(
-    () => ({ ok: true }),
-    (err) => ({ ok: false, message: String((err && err.message) || err) }),
-  )
+  return false
+}
+
+/**
+ * 检查一次更新，直接读 checkForUpdates() 的返回值。
+ * 不能等事件：electron-updater 对同一个检查做了去重，第二次调用直接返回上一个
+ * 已完成的 promise，不会再发 update-available / update-not-available，等事件会一直等到超时。
+ */
+async function checkForUpdates() {
+  if (!app.isPackaged) {
+    return { ok: false, unsupported: true }
+  }
+  try {
+    const result = await autoUpdater.checkForUpdates()
+    const latest = (result && result.updateInfo && result.updateInfo.version) || ''
+    if (!latest) return { ok: true, hasUpdate: false }
+    return { ok: true, hasUpdate: isNewer(latest, app.getVersion()), version: latest }
+  } catch (err) {
+    return { ok: false, message: String((err && err.message) || err) }
+  }
 }
 
 function startUpdateDownload() {
@@ -437,7 +456,16 @@ ipcMain.on('app:get-version', (event) => {
   event.returnValue = app.getVersion()
 })
 
-ipcMain.handle('app:check-update', () => checkForUpdates())
+ipcMain.handle('app:check-update', async () => {
+  const result = await checkForUpdates()
+  // 事件只在第一次检查时发，这里手动同步一下，顶部的更新提示条才会跟着出现
+  if (result.ok) {
+    pushUpdateState(
+      result.hasUpdate ? { state: 'available', version: result.version } : { state: 'up-to-date' },
+    )
+  }
+  return result
+})
 
 ipcMain.handle('app:start-update', () => startUpdateDownload())
 
