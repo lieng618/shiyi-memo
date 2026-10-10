@@ -88,10 +88,11 @@ async function login() {
   }
 }
 
-async function logout() {
-  await adminApi.logout()
+function logout() {
   authed.value = false
   adminName.value = ''
+  // 本地先退出：服务端清 Cookie 失败也不能把后台卡在登录状态
+  void adminApi.logout().catch(() => {})
 }
 </script>
 

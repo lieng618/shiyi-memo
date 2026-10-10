@@ -34,7 +34,8 @@ export const authApi = {
   /** 登录状态下直接设置 / 修改登录密码 */
   changePassword: (payload: { newPassword: string }) =>
     http.put<User>('/auth/password', payload).then((r) => r.data),
-  logout: () => http.post('/auth/logout').then(() => undefined),
+  /** 退出登录：失败由调用方自己提示，这里别弹默认的英文报错 */
+  logout: () => http.post('/auth/logout', undefined, { silent: true }).then(() => undefined),
   me: () => http.get<User>('/auth/me', { skipAuthRedirect: true }).then((r) => r.data),
 }
 

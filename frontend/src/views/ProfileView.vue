@@ -269,7 +269,8 @@ async function logout() {
   } catch {
     return
   }
-  await auth.logout()
+  // 本地立刻退出（store 里顺手通知服务端清 Cookie），不等请求回来就能回登录页
+  auth.logout()
   await router.replace({ name: 'login' })
 }
 </script>
