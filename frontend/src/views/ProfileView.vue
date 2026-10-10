@@ -19,17 +19,10 @@ import UserAvatar from '@/components/UserAvatar.vue'
 const auth = useAuthStore()
 const router = useRouter()
 const { isDark, setDark } = useTheme()
-const {
-  versionInfo,
-  isDesktop,
-  shellVersion,
-  refresh: refreshVersion,
-  desktopOutdated,
-} = useAppVersion()
+const { isDesktop, shellVersion, downloadUrl } = useAppVersion()
 
 // ---- 桌面端 ----
 const checkingUpdate = ref(false)
-const downloadUrl = computed(() => versionInfo.value?.desktop?.downloadUrl ?? '')
 
 const {
   supported: updaterSupported,
@@ -39,28 +32,18 @@ const {
   startUpdate: startClientUpdate,
 } = useUpdater()
 
-/** 检查更新：新版外壳走 electron-updater，老外壳退回"比版本号 + 给下载入口" */
+/** 检查更新：交给外壳里的 electron-updater */
 async function checkUpdate() {
   if (checkingUpdate.value) return
   checkingUpdate.value = true
   try {
-    if (updaterSupported) {
-      const result = await checkClientUpdate()
-      if (result === 'available') {
-        ElMessage.success(`发现新版本 ${clientNewVersion.value}，点「更新」即可安装`)
-      } else if (result === 'latest') {
-        ElMessage.success('已是最新版本')
-      } else {
-        ElMessage.error('检查更新失败，请稍后再试')
-      }
-      return
-    }
-    await refreshVersion()
-    if (desktopOutdated.value) {
-      const latest = versionInfo.value?.desktop?.latestVersion ?? ''
-      ElMessage.warning(`发现新版本 ${latest}，可以下载更新`)
-    } else {
+    const result = await checkClientUpdate()
+    if (result === 'available') {
+      ElMessage.success(`发现新版本 ${clientNewVersion.value}，点「更新」即可安装`)
+    } else if (result === 'latest') {
       ElMessage.success('已是最新版本')
+    } else {
+      ElMessage.error('检查更新失败，请稍后再试')
     }
   } finally {
     checkingUpdate.value = false
@@ -414,35 +397,23 @@ async function logout() {
         </section>
 
         <!-- 浏览器里给下载入口，客户端里给版本号和更新检查 -->
-        <section class="card">
+        <section v-if="isDesktop || downloadUrl" class="card">
           <h2>桌面端</h2>
           <div v-if="isDesktop" class="row row--split">
             <span class="muted tnum">当前版本 {{ shellVersion || '未知' }}</span>
             <div class="desktop-actions">
-              <el-button v-if="shellVersion" :loading="checkingUpdate" @click="checkUpdate">
+              <el-button v-if="updaterSupported" :loading="checkingUpdate" @click="checkUpdate">
                 检查更新
               </el-button>
-              <!-- 新版外壳：点了直接下载安装并重启 -->
+              <!-- 点了直接下载安装并重启 -->
               <el-button v-if="clientUpdateReady" type="primary" @click="startClientUpdate">
                 更新到 {{ clientNewVersion }}
               </el-button>
-              <!-- 老外壳不认更新接口，只能给个下载入口 -->
-              <el-button
-                v-else-if="desktopOutdated && downloadUrl"
-                type="primary"
-                tag="a"
-                :href="downloadUrl"
-              >
-                下载新版本 {{ versionInfo?.desktop?.latestVersion }}
-              </el-button>
             </div>
           </div>
-          <template v-else>
-            <el-button v-if="downloadUrl" type="primary" tag="a" :href="downloadUrl">
-              <el-icon><Download /></el-icon><span>下载桌面端</span>
-            </el-button>
-            <span v-else class="muted">下载地址还没配置好。</span>
-          </template>
+          <el-button v-else type="primary" tag="a" :href="downloadUrl">
+            <el-icon><Download /></el-icon><span>下载桌面端</span>
+          </el-button>
         </section>
 
         <section class="card">

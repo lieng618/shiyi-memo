@@ -1,6 +1,5 @@
 import { computed, ref } from 'vue'
 import { appApi } from '@/api'
-import { hasNewerVersion } from '@/utils/version'
 import type { AppVersionInfo } from '@/types'
 
 /** 桌面端外壳注入的，浏览器里没有 */
@@ -47,10 +46,8 @@ export function useAppVersion() {
     shellVersion,
     refresh: loadVersion,
     reload: () => window.location.reload(),
-    /** 桌面端外壳是否有更新 */
-    desktopOutdated: computed(() =>
-      hasNewerVersion(shellVersion, versionInfo.value?.desktop?.latestVersion),
-    ),
+    /** 安装包下载地址 */
+    downloadUrl: computed(() => versionInfo.value?.desktop?.downloadUrl ?? ''),
   }
 }
 

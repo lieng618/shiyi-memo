@@ -25,7 +25,6 @@ fi
 
 echo "==> [2/3] 打包后端（jar 输出到 start/）"
 mkdir -p "$START_DIR/logs"
-mkdir -p "$START_DIR/downloads"
 mvn -B -DskipTests clean package
 
 if [ ! -f "$START_DIR/$JAR_NAME" ]; then

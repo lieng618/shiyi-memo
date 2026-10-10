@@ -34,7 +34,7 @@
     "publish": [
       {
         "provider": "generic",
-        "url": "https://memo.goldminer.cloud/downloads/"
+        "url": "https://gitee.com/lieng618/shiyi-memo/releases/download/latest/"
       }
     ],
     "win": {
@@ -55,7 +55,7 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "拾忆",
-      "artifactName": "shiyi-memo-setup-${version}.${ext}"
+      "artifactName": "shiyi-memo-setup.${ext}"
     }
   },
   "dependencies": {

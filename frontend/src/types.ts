@@ -215,9 +215,7 @@ export interface AppVersionInfo {
   version: string
   buildTime?: string | null
   desktop?: {
-    /** 桌面端最新外壳版本 */
-    latestVersion?: string | null
-    /** 安装包下载地址 */
+    /** 安装包下载地址，没配就是空 */
     downloadUrl?: string | null
   } | null
 }

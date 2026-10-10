@@ -81,11 +81,7 @@ public class AppProperties {
     /** 桌面端（Electron 外壳）的发布信息，和站点是两条独立的版本线 */
     @Data
     public static class Desktop {
-        /** 最新外壳版本，和 desktop/package.json 的 version 保持一致 */
-        private String latestVersion = "";
-        /** 安装包地址，留空则按 base-url 拼 */
+        /** 安装包下载地址（Gitee 发行版的固定地址）；留空则网页不显示桌面端入口 */
         private String downloadUrl = "";
-        /** 安装包存放目录，相对路径按进程工作目录解析（和 app.storage.root 一样） */
-        private String downloadDir = "./downloads";
     }
 }

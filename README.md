@@ -173,9 +173,7 @@ Windows 双击根目录的 `start-windows.bat`，或在终端执行：
 | `app.storage.root` | 上传文件目录 |
 | `app.storage.thumbnail-root` | 缩略图目录 |
 | `app.security.allow-register` | 是否允许新邮箱自助注册 |
-| `app.desktop.latest-version` | 留空则读下载目录里的 `latest.yml`，只有想手动指定外壳版本时才填 |
-| `app.desktop.download-url` | 安装包地址，留空则按 `app.base-url` 拼 |
-| `app.desktop.download-dir` | 安装包存放目录，`/downloads/**` 由后端直接对外发 |
+| `app.desktop.download-url` | 网页上「下载桌面端」指向的安装包地址（Gitee 发行版），留空则不显示该入口 |
 
 ## 本地开发
 

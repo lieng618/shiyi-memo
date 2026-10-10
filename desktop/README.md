@@ -37,7 +37,7 @@ npm run dist
 
 | 文件 | 说明 |
 | --- | --- |
-| `shiyi-memo-setup-<版本>.exe` | NSIS 安装包，可选安装目录，建桌面和开始菜单快捷方式 |
+| `shiyi-memo-setup.exe` | NSIS 安装包，可选安装目录，建桌面和开始菜单快捷方式 |
 | `win-unpacked/` | 未压缩的绿色目录，方便排查问题 |
 
 只想快速验证不生成安装包，用 `npm run dist:dir`。
@@ -46,75 +46,58 @@ npm run dist
 
 ## 发布新版本
 
-一条命令搞定：
+安装包**不走自己的服务器**（带宽太小，100MB 的包下到一半就断），全部放 Gitee 发行版。
+三步：
 
-```powershell
-cd desktop
-.\publish.ps1 -Version 1.1.0
+1. 改 `package.json` 的 `version`（比如 `1.2.0`）
+2. 打包：
+
+   ```powershell
+   cd desktop
+   npm run dist
+   ```
+
+3. 到 Gitee 建发行版（tag 填 `v1.2.0`），把 `release\` 里这三个文件拖上去发布：
+
+```
+shiyi-memo-setup.exe            安装包
+shiyi-memo-setup.exe.blockmap   差量更新用，别漏
+latest.yml                      客户端读的更新清单
 ```
 
-它做的事：把版本号写进 `package.json` → 打包 → 把下面三个文件传到服务器的下载目录
-→ 在服务器上拷一份固定文件名的副本给网页的「下载桌面端」用。
+文件名里**故意不带版本号**：这样下载地址永远不变，网页的下载按钮和客户端里写死的
+更新源都不用跟着改。
+
+### 更新源为什么写 `releases/download/latest`
+
+客户端里写死的更新源是：
 
 ```
-shiyi-memo-setup-<版本>.exe            安装包
-shiyi-memo-setup-<版本>.exe.blockmap   差量更新用，别漏
-latest.yml                             客户端读的更新清单
+https://gitee.com/<owner>/<repo>/releases/download/latest/
 ```
 
-| 参数 | 说明 |
-| --- | --- |
-| 不带参数 | 用当前版本号重新打包并上传 |
-| `-Version 1.1.0` | 先把版本号改成 1.1.0 |
-| `-SkipUpload` | 只打包，不传服务器 |
-| `-SkipBuild` | 用 `release\` 里已有的产物，只上传 |
-| `-Server` / `-RemoteDir` | 临时覆盖发布目标，不用改配置文件 |
+`latest` 不是真实的 tag，是 Gitee 的别名，**永远指向最新那个发行版**（实测：随便填个
+不存在的 tag 会 404，只有 `latest` 会跳到最新版）。地址不随版本变，客户端打包时才能
+写死。
 
-### 配置发布目标
-
-服务器地址和目录因人而异，所以不写在脚本里。把 `publish.local.psd1.example` 复制成
-`publish.local.psd1` 填上即可（这个文件名在 `.gitignore` 里，不会被提交）：
-
-```powershell
-@{
-    Server    = 'ubuntu@1.2.3.4'
-    RemoteDir = '/home/your-app/start/downloads'
-}
-```
-
-也可以用环境变量 `SHIYI_PUBLISH_SERVER` / `SHIYI_PUBLISH_REMOTE_DIR`。
-没配就直接跑，脚本会在打包之前报错并告诉你怎么配。
-
-账号别填 `root@`：云上的 Ubuntu 镜像默认关掉 root 的 SSH 登录（能 `su` 进 root，
-但 `ssh root@` 连不上），填日常登录账号（通常是 `ubuntu`）就行。
-
-下载目录如果是 root 建的（用 root 部署过就会这样），脚本会自动退回「先传到临时目录、
-再用 `sudo` 搬进去」，中间可能让你输一次密码。想彻底免掉，在服务器上跑一次：
-
-```bash
-sudo mkdir -p <RemoteDir>
-sudo chown ubuntu:ubuntu <RemoteDir>
-```
-
-再把本机的 SSH 公钥加到服务器的 `~/.ssh/authorized_keys`，以后就是真正的一键，
-密码和 sudo 都不用输。
+⚠️ 这个别名官方没有文档，是实测出来的。**每发一个版本顺手确认一下它还指着新版本**
+——万一哪天变了，所有客户端的自动更新会静默失效（不报错，就是永远不更新）。
 
 ### 换到自己的服务器要改哪些
 
-脚本只是其中一处，整套站点相关的值散在下面这些地方，自建时都要改：
+整套站点相关的值散在下面这些地方，自建时都要改：
 
 | 位置 | 改什么 |
 | --- | --- |
-| `publish.local.psd1` | 发布目标（本文件，不进仓库） |
 | `src/config.js` | `SERVER_URL`：外壳加载哪个站点 |
-| `package.json` → `build.publish[0].url` | 更新包从哪取，要和下载地址一致 |
+| `package.json` → `build.publish[0].url` | 更新源地址，换成你自己的发行版地址 |
 | `package.json` → `appId` / `productName` | 应用标识和显示名 |
-| 后端 `application.yml` → `app.base-url` | 站点对外地址，`/api/version` 用它拼下载地址 |
+| 后端 `application-local.yml` → `app.desktop.download-url` | 网页上「下载桌面端」指向哪 |
+| 后端 `application-local.yml` → `app.base-url` | 站点对外地址，邮件里的链接用它 |
 | `ecosystem.config.js` → `APP_DIR` / `APP_JAR` | 服务器上的应用目录和 jar 名 |
 
-版本号只有 `package.json` 这一处——后端会去下载目录读 `latest.yml` 拿最新版本
-（想手动指定才用 `application.yml` 的 `app.desktop.latest-version`）。
-客户端启动后自己检查，有新版就在顶部提示，点一下就下载、安装并重启。
+`app.desktop.download-url` 留空时网页不显示桌面端入口，所以自建时忘了配也不会出问题。
+客户端启动后自己检查 `latest.yml`，有新版就在顶部提示，点一下就下载、安装并重启。
 
 ## 改服务器地址
 
@@ -146,7 +129,7 @@ desktop/
 
 - 单实例：重复点图标会把已有窗口唤到前面
 - 版本号可见：preload 把外壳版本交给网页（`window.shiyi.version`），个人中心据此显示
-  「当前版本」并和服务器上的最新版比对
+  「当前版本」
 - 自动更新：启动后静默检查 `latest.yml`，有新版就在顶部提示；用户点「更新」后
   在应用内下载并显示进度，装完自动重启（重启前会等笔记的编辑先落库）
 - 无边框窗口：不要系统那条标题栏，颜色跟站点走，系统只保留右上角的最小化 /
