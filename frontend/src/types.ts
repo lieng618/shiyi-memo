@@ -209,3 +209,16 @@ export interface ChatMessage {
   createdAt: string
 }
 
+/** /api/version 返回的版本信息 */
+export interface AppVersionInfo {
+  /** 站点版本 */
+  version: string
+  buildTime?: string | null
+  desktop?: {
+    /** 桌面端最新外壳版本 */
+    latestVersion?: string | null
+    /** 安装包下载地址 */
+    downloadUrl?: string | null
+  } | null
+}
+

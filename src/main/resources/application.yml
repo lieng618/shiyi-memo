@@ -98,6 +98,13 @@ app:
     # 是否允许新邮箱自助注册（首次验证码登录即建号）
     allow-register: true
     default-level-code: free
+  desktop:
+    # 留空则去下载目录读 latest.yml（发版脚本会传上去）；只有想手动指定时才填
+    latest-version: ""
+    # 留空则按 base-url 拼成 {base-url}/downloads/shiyi-memo-setup.exe
+    download-url: ""
+    # 安装包放这里，由 Spring 直接发文件（相对路径按进程工作目录解析）
+    download-dir: ./downloads
 
 logging:
   level:

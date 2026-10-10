@@ -4,6 +4,8 @@ import { ElMessage } from 'element-plus'
 declare module 'axios' {
   interface AxiosRequestConfig {
     skipAuthRedirect?: boolean
+    /** 静默请求：失败不弹提示也不跳登录页（版本检查用） */
+    silent?: boolean
   }
 }
 
@@ -38,13 +40,16 @@ http.interceptors.response.use(
     const status = error.response?.status
     const message = error.response?.data?.message ?? error.message ?? '请求失败'
     if (status === 401) {
+      if (error.config?.silent) {
+        return Promise.reject(new ApiError(message, status))
+      }
       if (!error.config?.skipAuthRedirect) {
         onUnauthorized.handler()
       }
       return Promise.reject(new ApiError(message, status))
     }
     // 401 之外统一弹提示，调用方一般不需要再处理
-    if (status !== 0) {
+    if (status !== 0 && !error.config?.silent) {
       ElMessage.error(message)
     }
     return Promise.reject(new ApiError(message, status))

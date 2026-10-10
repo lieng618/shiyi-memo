@@ -173,6 +173,9 @@ Windows 双击根目录的 `start-windows.bat`，或在终端执行：
 | `app.storage.root` | 上传文件目录 |
 | `app.storage.thumbnail-root` | 缩略图目录 |
 | `app.security.allow-register` | 是否允许新邮箱自助注册 |
+| `app.desktop.latest-version` | 留空则读下载目录里的 `latest.yml`，只有想手动指定外壳版本时才填 |
+| `app.desktop.download-url` | 安装包地址，留空则按 `app.base-url` 拼 |
+| `app.desktop.download-dir` | 安装包存放目录，`/downloads/**` 由后端直接对外发 |
 
 ## 本地开发
 
@@ -252,7 +255,7 @@ logs/            运行日志
 
 ## 桌面端
 
-`desktop/` 是一个轻量 Electron 外壳，启动后加载站点地址，本身不含业务逻辑——前端改完部署到服务器，桌面端用户无需重新安装即可用上新版本。打包与服务器地址配置见 [desktop/README.md](desktop/README.md)。
+`desktop/` 是一个轻量 Electron 外壳，启动后加载站点地址，本身不含业务逻辑——前端改完部署到服务器，桌面端用户无需重新安装即可用上新版本。只有外壳自己改了才要发安装包，客户端会自己检查并提示更新。打包与发布流程见 [desktop/README.md](desktop/README.md)。
 
 ## 贡献
 

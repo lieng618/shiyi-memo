@@ -1,5 +1,6 @@
 import { http } from './http'
 import type {
+  AppVersionInfo,
   BackupImportResult,
   ChatMessage,
   FileAsset,
@@ -35,6 +36,11 @@ export const authApi = {
     http.put<User>('/auth/password', payload).then((r) => r.data),
   logout: () => http.post('/auth/logout').then(() => undefined),
   me: () => http.get<User>('/auth/me', { skipAuthRedirect: true }).then((r) => r.data),
+}
+
+export const appApi = {
+  /** 站点版本 + 桌面端下载信息，免登录 */
+  version: () => http.get<AppVersionInfo>('/version', { silent: true }).then((r) => r.data),
 }
 
 export const memoApi = {

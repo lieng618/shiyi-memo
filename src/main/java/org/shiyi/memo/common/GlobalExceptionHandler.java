@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.io.IOException;
 import java.util.LinkedHashMap;
@@ -41,6 +42,12 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(ResponseStatusException.class)
     public ResponseEntity<Map<String, Object>> handleResponseStatus(ResponseStatusException ex) {
         return build(ex.getStatusCode().value(), ex.getReason());
+    }
+
+    /** 找不到的静态资源要按 404 返回，不能落到下面的兜底 500 */
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseEntity<Map<String, Object>> handleNotFound(NoResourceFoundException ex) {
+        return build(404, "资源不存在");
     }
 
     /** SSE 客户端刷新或关闭时写入旧连接会抛 IOException，这不是业务错误。 */

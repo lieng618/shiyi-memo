@@ -43,6 +43,8 @@ src/main/resources/application-local.yml
 # 运行期数据：上传的文件、缩略图缓存、日志
 data/
 logs/
+# 桌面端安装包（本地调试时放这里，由 Spring 直接对外发）
+downloads/
 # 构建工具（便携版 Maven），仅本机使用
 .tools/
 
