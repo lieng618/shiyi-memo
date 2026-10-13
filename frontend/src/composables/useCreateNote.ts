@@ -1,6 +1,7 @@
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { memoApi } from '@/api'
+import { forceNoteViewMode } from '@/composables/useNoteViewMode'
 
 /**
  * 编辑页是懒加载路由，整块 wangEditor（约 790 KB）都挂在它的 chunk 里，
@@ -65,6 +66,8 @@ export function useCreateNote() {
   return async function createNote() {
     const created = await memoApi.create({ title: '', contentHtml: '' })
     ElMessage.success('已新建笔记')
+    // 空笔记没什么可看的，直接进编辑态，别让上次的阅读偏好把光标挡在门外
+    forceNoteViewMode('edit')
     await router.push(`/notes/${created.id}`)
     return created
   }

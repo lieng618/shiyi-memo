@@ -7,6 +7,7 @@ import { friendApi, shareApi } from '@/api'
 import type { PublicMemoDetail } from '@/types'
 import { useAuthStore } from '@/stores/auth'
 import { formatFull } from '@/utils/format'
+import { forceNoteViewMode } from '@/composables/useNoteViewMode'
 import MarkdownView from '@/components/MarkdownView.vue'
 import UserAvatar from '@/components/UserAvatar.vue'
 
@@ -59,6 +60,8 @@ function goLogin() {
 
 function goApp() {
   if (isOwner.value && detail.value) {
+    // 按钮上写的是「编辑笔记」，落到详情页就该是编辑态
+    forceNoteViewMode('edit')
     void router.push(`/notes/${detail.value.id}`)
     return
   }
