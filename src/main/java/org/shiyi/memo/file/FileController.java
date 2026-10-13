@@ -11,8 +11,11 @@ import org.springframework.core.io.Resource;
 import org.springframework.http.CacheControl;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.util.StringUtils;
+import org.springframework.web.context.request.WebRequest;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -22,7 +25,9 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Set;
@@ -33,6 +38,13 @@ import java.util.Set;
 public class FileController {
 
     private static final Set<String> INLINE_KINDS = Set.of("image", "video", "audio");
+
+    /** 缩略图是派生出来的小图，可以缓存久一点；内容不会被改写 */
+    private static final CacheControl THUMBNAIL_CACHE =
+            CacheControl.maxAge(Duration.ofDays(7)).cachePrivate();
+    /** 原文件 / 下载：留短一点，后台屏蔽某个文件后不至于长期留在浏览器缓存里 */
+    private static final CacheControl FILE_CACHE =
+            CacheControl.maxAge(Duration.ofDays(1)).cachePrivate();
 
     private final FileService fileService;
 
@@ -64,34 +76,38 @@ public class FileController {
      * 返回 Resource 时 Spring MVC 会自动处理 Range 请求，视频能拖动进度条。
      */
     @GetMapping("/{id}/raw")
-    public ResponseEntity<Resource> raw(@PathVariable long id) {
+    public ResponseEntity<Resource> raw(@PathVariable long id, WebRequest request) {
         FileAsset asset = fileService.requireReadable(AuthContext.requireUserId(), id);
-        return resourceResponse(asset, fileService.pathOf(asset), true);
+        return resourceResponse(asset, fileService.pathOf(asset), true, request);
     }
 
     /** 图片缩略图；生成失败（例如 HEIC）时退回原图。聊天对方也能取，按可读校验 */
     @GetMapping("/{id}/thumb")
     public ResponseEntity<Resource> thumb(@PathVariable long id,
-                                          @RequestParam(defaultValue = "480") Integer w) {
+                                          @RequestParam(defaultValue = "480") Integer w,
+                                          WebRequest request) {
         FileAsset asset = fileService.requireReadable(AuthContext.requireUserId(), id);
         if (Boolean.TRUE.equals(asset.getBlocked())) {
             throw ApiException.forbidden("该文件已被管理员屏蔽");
         }
         Path thumbnail = fileService.thumbnailOf(asset, w);
         if (thumbnail == null) {
-            return resourceResponse(asset, fileService.pathOf(asset), true);
+            return resourceResponse(asset, fileService.pathOf(asset), true, request);
+        }
+        if (request.checkNotModified(etagOf(thumbnail))) {
+            return ResponseEntity.status(HttpStatus.NOT_MODIFIED).build();
         }
         return ResponseEntity.ok()
                 .contentType(MediaType.IMAGE_JPEG)
-                .cacheControl(CacheControl.maxAge(Duration.ofDays(7)).cachePrivate())
+                .cacheControl(THUMBNAIL_CACHE)
                 .body(new FileSystemResource(thumbnail));
     }
 
     /** 强制下载（带原始文件名） */
     @GetMapping("/{id}/download")
-    public ResponseEntity<Resource> download(@PathVariable long id) {
+    public ResponseEntity<Resource> download(@PathVariable long id, WebRequest request) {
         FileAsset asset = fileService.requireReadable(AuthContext.requireUserId(), id);
-        return resourceResponse(asset, fileService.pathOf(asset), false);
+        return resourceResponse(asset, fileService.pathOf(asset), false, request);
     }
 
     @PostMapping("/{id}/attach")
@@ -104,7 +120,8 @@ public class FileController {
         fileService.delete(AuthContext.requireUserId(), id);
     }
 
-    private ResponseEntity<Resource> resourceResponse(FileAsset asset, Path path, boolean allowInline) {
+    private ResponseEntity<Resource> resourceResponse(FileAsset asset, Path path, boolean allowInline,
+                                                      WebRequest request) {
         MediaType mediaType;
         try {
             mediaType = MediaType.parseMediaType(asset.getMime());
@@ -118,12 +135,47 @@ public class FileController {
                 : ContentDisposition.attachment())
                 .filename(asset.getOriginalName(), StandardCharsets.UTF_8)
                 .build();
+
+        // 文件内容不会原地改写，用内容哈希当 ETag：缓存过期后浏览器只发一次
+        // 条件请求就能拿到 304，不必把整个视频 / 大图重新下一遍。
+        String etag = etagOf(asset);
+        // 分段请求（拖进度条）自带 If-Range 语义，交给 Spring 的 Range 处理，这里不插手
+        if (request.getHeader(HttpHeaders.RANGE) == null
+                && request.checkNotModified(etag, lastModifiedOf(path))) {
+            return ResponseEntity.status(HttpStatus.NOT_MODIFIED).build();
+        }
         return ResponseEntity.ok()
                 .contentType(mediaType)
                 .contentLength(asset.getSize())
                 .header(HttpHeaders.ACCEPT_RANGES, "bytes")
                 .header(HttpHeaders.CONTENT_DISPOSITION, disposition.toString())
-                .cacheControl(CacheControl.maxAge(Duration.ofDays(1)).cachePrivate())
+                .eTag(etag)
+                .cacheControl(FILE_CACHE)
                 .body(new FileSystemResource(path));
+    }
+
+    private static long lastModifiedOf(Path path) {
+        try {
+            return Files.getLastModifiedTime(path).toMillis();
+        } catch (IOException ex) {
+            return -1;
+        }
+    }
+
+    /** 内容哈希优先（同内容必定同哈希），没有哈希就退回 id + 大小 */
+    private static String etagOf(FileAsset asset) {
+        String seed = StringUtils.hasText(asset.getContentHash())
+                ? asset.getContentHash()
+                : asset.getId() + "-" + asset.getSize();
+        return "\"" + seed + "\"";
+    }
+
+    /** 缩略图文件路径固定（fileId/宽度.jpg），用磁盘时间戳当验证器 */
+    private static String etagOf(Path thumbnail) {
+        try {
+            return "\"" + Files.size(thumbnail) + "-" + Files.getLastModifiedTime(thumbnail).toMillis() + "\"";
+        } catch (IOException ex) {
+            return null;
+        }
     }
 }

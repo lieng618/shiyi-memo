@@ -6,6 +6,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
+import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
@@ -24,6 +25,8 @@ public class SpaFallbackFilter extends OncePerRequestFilter {
             throws ServletException, IOException {
         if (shouldForward(request)) {
             String target = isAdminPath(request.getRequestURI()) ? "/admin.html" : "/index.html";
+            // 回退的是外壳 HTML，必须每次校验，否则用户会被卡在旧版本上
+            response.setHeader(HttpHeaders.CACHE_CONTROL, "no-cache");
             request.getRequestDispatcher(target).forward(request, response);
             return;
         }
