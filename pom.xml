@@ -92,6 +92,12 @@
             <optional>true</optional>
         </dependency>
 
+        <!-- 进程内缓存：用户等级这类「读得频繁、几乎不变」的小表不值得每次都查库 -->
+        <dependency>
+            <groupId>com.github.ben-manes.caffeine</groupId>
+            <artifactId>caffeine</artifactId>
+        </dependency>
+
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>

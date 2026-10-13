@@ -54,10 +54,7 @@ public class MemoService {
     public PageResult<MemoDtos.MemoSummary> list(long userId, String keyword, Collection<Long> tagIds,
                                                  Boolean pinned, long page, long size) {
         var wrapper = Wrappers.lambdaQuery(Memo.class).eq(Memo::getUserId, userId);
-        if (StringUtils.hasText(keyword)) {
-            String kw = keyword.trim();
-            wrapper.and(q -> q.like(Memo::getTitle, kw).or().like(Memo::getContentHtml, kw));
-        }
+        MemoSearch.applyKeyword(wrapper, keyword);
         if (pinned != null) {
             wrapper.eq(Memo::getPinned, pinned);
         }
@@ -81,7 +78,7 @@ public class MemoService {
 
         List<MemoDtos.MemoSummary> records = memos.stream()
                 .map(memo -> new MemoDtos.MemoSummary(memo.getId(), memo.getTitle(),
-                        excerpt(memo.getContentHtml()),
+                        summaryExcerpt(memo),
                         Boolean.TRUE.equals(memo.getPinned()),
                         tagMap.getOrDefault(memo.getId(), List.of()),
                         fileCounts.getOrDefault(memo.getId(), 0L),
@@ -109,6 +106,7 @@ public class MemoService {
         memo.setUserId(userId);
         memo.setContentHtml(request.contentHtml() == null ? "" : request.contentHtml());
         memo.setTitle(resolveTitle(request.title(), memo.getContentHtml()));
+        deriveSearchText(memo);
         boolean pinned = Boolean.TRUE.equals(request.pinned());
         memo.setPinned(pinned);
         memo.setPinnedAt(pinned ? LocalDateTime.now() : null);
@@ -125,6 +123,7 @@ public class MemoService {
         patch.setId(memo.getId());
         if (content != null) {
             patch.setContentHtml(content);
+            deriveSearchText(patch);
         }
         patch.setTitle(resolveTitle(request.title(), content != null ? content : memo.getContentHtml()));
         if (request.pinned() != null) {
@@ -328,7 +327,32 @@ public class MemoService {
         if (!StringUtils.hasText(contentHtml)) {
             return "";
         }
-        String text = stripHtml(contentHtml).replaceAll("\\s+", " ").trim();
+        return excerptFrom(stripHtml(contentHtml));
+    }
+
+    /**
+     * 保存时顺手算好搜索用纯文本和列表摘要：列表页每次都要给整页笔记剥一遍 HTML，
+     * 放在写入侧只算一次，搜索也不必再去扫富文本。
+     */
+    private static void deriveSearchText(Memo memo) {
+        fillDerivedText(memo, memo);
+    }
+
+    /** 把去标签纯文本和摘要写进 patch（供写入路径与历史数据回填共用） */
+    public static void fillDerivedText(Memo source, Memo patch) {
+        String text = stripHtml(source.getContentHtml() == null ? "" : source.getContentHtml());
+        patch.setContentText(text);
+        patch.setExcerpt(excerptFrom(text));
+    }
+
+    /** 老数据还没回填摘要列时现场算一份，保证列表不空白 */
+    public static String summaryExcerpt(Memo memo) {
+        String stored = memo.getExcerpt();
+        return stored == null ? excerpt(memo.getContentHtml()) : stored;
+    }
+
+    private static String excerptFrom(String plainText) {
+        String text = plainText.replaceAll("\\s+", " ").trim();
         return text.length() > 140 ? text.substring(0, 140) + "…" : text;
     }
 

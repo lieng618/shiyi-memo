@@ -1,6 +1,8 @@
 package org.shiyi.memo.user;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
 import lombok.RequiredArgsConstructor;
 import org.shiyi.memo.common.ApiException;
 import org.shiyi.memo.config.AppProperties;
@@ -18,6 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.security.SecureRandom;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Locale;
@@ -29,12 +32,28 @@ public class UserService {
     private static final String NICKNAME_TAKEN = "昵称已被使用，换一个吧";
     /** 邀请码用的字符集：去掉了 0/1/l/o 这些容易看错、念错的字符 */
     private static final String INVITE_ALPHABET = "23456789abcdefghjkmnpqrstuvwxyz";
+    private static final String DEFAULT_LEVEL_KEY = "default";
 
     private final AppUserMapper userMapper;
     private final SecureRandom random = new SecureRandom();
     private final UserLevelMapper levelMapper;
     private final FileAssetMapper fileAssetMapper;
     private final AppProperties properties;
+
+    /**
+     * 用户等级只在后台改，但上传、看配额时每次都要读一遍。
+     * 缓存在进程内，后台改动会立刻失效；TTL 只是兜底（比如多实例部署时）。
+     */
+    private final Cache<Long, UserLevel> levelCache = Caffeine.newBuilder()
+            .maximumSize(128)
+            .expireAfterWrite(Duration.ofMinutes(10))
+            .build();
+
+    /** 默认等级只有一行，单独存一个键 */
+    private final Cache<String, UserLevel> defaultLevelCache = Caffeine.newBuilder()
+            .maximumSize(1)
+            .expireAfterWrite(Duration.ofMinutes(10))
+            .build();
 
     public AppUser get(long id) {
         AppUser user = userMapper.selectById(id);
@@ -58,11 +77,39 @@ public class UserService {
     }
 
     public UserLevel levelOf(AppUser user) {
-        UserLevel level = user.getLevelId() == null ? null : levelMapper.selectById(user.getLevelId());
-        return level != null ? level : defaultLevel();
+        Long levelId = user.getLevelId();
+        if (levelId == null) {
+            return defaultLevel();
+        }
+        UserLevel cached = levelCache.getIfPresent(levelId);
+        if (cached != null) {
+            return cached;
+        }
+        UserLevel level = levelMapper.selectById(levelId);
+        if (level == null) {
+            return defaultLevel();
+        }
+        levelCache.put(levelId, level);
+        return level;
     }
 
     public UserLevel defaultLevel() {
+        UserLevel cached = defaultLevelCache.getIfPresent(DEFAULT_LEVEL_KEY);
+        if (cached != null) {
+            return cached;
+        }
+        UserLevel level = loadDefaultLevel();
+        defaultLevelCache.put(DEFAULT_LEVEL_KEY, level);
+        return level;
+    }
+
+    /** 等级被后台改动后调用：下一次读取会重新查库 */
+    public void invalidateLevelCache() {
+        levelCache.invalidateAll();
+        defaultLevelCache.invalidateAll();
+    }
+
+    private UserLevel loadDefaultLevel() {
         UserLevel level = levelMapper.selectOne(Wrappers.lambdaQuery(UserLevel.class)
                 .eq(UserLevel::getIsDefault, true)
                 .orderByAsc(UserLevel::getSort)

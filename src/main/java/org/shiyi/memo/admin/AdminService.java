@@ -16,6 +16,7 @@ import org.shiyi.memo.file.dto.FileDtos;
 import org.shiyi.memo.file.entity.FileAsset;
 import org.shiyi.memo.file.mapper.FileAssetMapper;
 import org.shiyi.memo.memo.MemoService;
+import org.shiyi.memo.memo.MemoSearch;
 import org.shiyi.memo.memo.entity.Memo;
 import org.shiyi.memo.memo.mapper.MemoMapper;
 import org.shiyi.memo.message.MessageService;
@@ -187,6 +188,7 @@ public class AdminService {
         if (Boolean.TRUE.equals(request.isDefault())) {
             markDefault(level.getId());
         }
+        userService.invalidateLevelCache();
         return UserDtos.LevelDto.from(userService.getLevel(level.getId()), 0L);
     }
 
@@ -208,6 +210,7 @@ public class AdminService {
         if (Boolean.TRUE.equals(request.isDefault())) {
             markDefault(level.getId());
         }
+        userService.invalidateLevelCache();
         return UserDtos.LevelDto.from(userService.getLevel(levelId), null);
     }
 
@@ -227,16 +230,14 @@ public class AdminService {
             markDefault(levels.stream().filter(item -> !item.getId().equals(levelId))
                     .findFirst().orElseThrow().getId());
         }
+        userService.invalidateLevelCache();
     }
 
     // ---------------- 笔记 ----------------
 
     public PageResult<AdminDtos.AdminMemoDto> listMemos(String keyword, Long userId, long page, long size) {
         var wrapper = Wrappers.lambdaQuery(Memo.class);
-        if (StringUtils.hasText(keyword)) {
-            String kw = keyword.trim();
-            wrapper.and(q -> q.like(Memo::getTitle, kw).or().like(Memo::getContentHtml, kw));
-        }
+        MemoSearch.applyKeyword(wrapper, keyword);
         wrapper.eq(userId != null, Memo::getUserId, userId).orderByDesc(Memo::getId);
 
         IPage<Memo> result = memoMapper.selectPage(new Page<>(page, size), wrapper);
@@ -253,7 +254,7 @@ public class AdminService {
                     return new AdminDtos.AdminMemoDto(memo.getId(), memo.getUserId(),
                             owner == null ? null : owner.getEmail(),
                             owner == null ? null : owner.getNickname(),
-                            memo.getTitle(), MemoService.excerpt(memo.getContentHtml()),
+                            memo.getTitle(), MemoService.summaryExcerpt(memo),
                             Boolean.TRUE.equals(memo.getPinned()),
                             fileCounts.getOrDefault(memo.getId(), 0L),
                             memo.getCreatedAt(), memo.getUpdatedAt());

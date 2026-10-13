@@ -18,6 +18,10 @@ public class Memo {
     private String title;
     /** 富文本 HTML（wangEditor） */
     private String contentHtml;
+    /** 去标签后的纯文本，搜索和摘要都读它 */
+    private String contentText;
+    /** 列表摘要，写入时算好，列表页直接用 */
+    private String excerpt;
     private Boolean pinned;
     private LocalDateTime pinnedAt;
     private String shareToken;
