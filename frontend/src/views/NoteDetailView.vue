@@ -46,12 +46,6 @@ let saveQueue: Promise<void> = Promise.resolve()
 let syncedTagNames = ''
 
 const tagOptions = computed(() => tags.value.map((tag) => tag.name))
-/**
- * 正文为空时阅读态就是一片空白（新建的笔记正好是这种），给一句提示。
- * 判空不能只看 contentHtml 的长度：没写字的正文其实是 <p><br></p>；
- * 反过来只有图片 / 视频 / 表格的笔记不算空，所以先认这些标签。
- */
-const showEmptyHint = computed(() => !hasBodyContent(contentHtml.value))
 const saveLabel = computed(() => {
   switch (saveState.value) {
     case 'saving':
@@ -67,13 +61,6 @@ const saveLabel = computed(() => {
 
 function tagColorOf(name: string) {
   return tags.value.find((tag) => tag.name === name)?.color ?? 'var(--brand)'
-}
-
-function hasBodyContent(html: string) {
-  if (/<(img|video|audio|table|hr|iframe)\b/i.test(html)) {
-    return true
-  }
-  return html.replace(/<[^>]*>/g, '').replace(/&nbsp;/gi, ' ').trim().length > 0
 }
 
 /** 切到阅读态先把光标从编辑器里挪走，切回编辑态再把它交还给编辑器 */
@@ -332,8 +319,7 @@ async function onExport(format: ExportFormat) {
       <el-skeleton v-if="loading" :rows="6" animated class="editor-skeleton" />
       <template v-else>
         <div v-show="mode === 'read'" class="read-view">
-          <MarkdownView v-if="!showEmptyHint" :content="contentHtml" link-actions />
-          <p v-else class="read-empty muted">还没有正文，点「编辑」写点什么。</p>
+          <MarkdownView :content="contentHtml" link-actions />
         </div>
         <RichEditor
           v-if="editorAlive"
@@ -547,13 +533,6 @@ async function onExport(format: ExportFormat) {
   max-width: 820px;
   margin: 0 auto;
   padding: 18px 22px var(--space-12);
-}
-
-.read-empty {
-  max-width: 820px;
-  margin: 0 auto;
-  padding: 18px 22px;
-  font-size: 13.5px;
 }
 
 @media (max-width: 768px) {
