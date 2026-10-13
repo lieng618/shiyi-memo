@@ -1,6 +1,8 @@
 <!--
-  阅读态点链接时浮出的快捷条：只搬编辑模式里的「复制链接」和「打开链接」两条，
-  图标与文案和那边保持一致（见 RichEditor 的 shiyiCopyLink 菜单与内置 viewLink）。
+  阅读态点链接时浮出的快捷条：只搬编辑模式里的「复制链接」和「打开链接」两条。
+  图标与观感都对齐编辑模式的超链接悬浮条（见 RichEditor 的 shiyiCopyLink 菜单与内置
+  viewLink）：同样是纯图标按钮、悬停出提示。尺寸取自 wangEditor 的 .w-e-hover-bar /
+  .w-e-bar-item / .w-e-menu-tooltip-v5，以及 rich-editor.scss 里那几处覆写。
 -->
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
@@ -78,20 +80,29 @@ function openLink() {
       aria-label="链接操作"
       :style="{ top: `${top}px`, left: `${left}px` }"
     >
-      <button
-        ref="firstButtonRef"
-        type="button"
-        class="link-action-item"
-        title="复制链接"
-        @click="copyLink"
-      >
-        <span class="link-action-icon" aria-hidden="true" v-html="COPY_ICON" />
-        <span>复制链接</span>
-      </button>
-      <button type="button" class="link-action-item" title="打开链接" @click="openLink">
-        <span class="link-action-icon" aria-hidden="true" v-html="OPEN_ICON" />
-        <span>打开链接</span>
-      </button>
+      <div class="link-action-item">
+        <button
+          ref="firstButtonRef"
+          type="button"
+          class="link-action-btn"
+          data-tooltip="复制链接"
+          aria-label="复制链接"
+          @click="copyLink"
+        >
+          <span class="link-action-icon" aria-hidden="true" v-html="COPY_ICON" />
+        </button>
+      </div>
+      <div class="link-action-item">
+        <button
+          type="button"
+          class="link-action-btn"
+          data-tooltip="打开链接"
+          aria-label="打开链接"
+          @click="openLink"
+        >
+          <span class="link-action-icon" aria-hidden="true" v-html="OPEN_ICON" />
+        </button>
+      </div>
     </div>
   </Teleport>
 </template>
@@ -101,39 +112,45 @@ function openLink() {
   position: fixed;
   z-index: 2000;
   display: flex;
-  gap: 2px;
-  /* 定位时按这个宽度预留（MarkdownView 里的 BAR_WIDTH 要跟着改） */
-  width: 196px;
-  padding: 4px;
+  /* 两个 38px 的按钮位 + 左右 5px 内边距 + 2px 边框 = 88px；
+     定位时按这个宽度预留（MarkdownView 里的 BAR_WIDTH 要跟着改） */
+  width: 88px;
+  padding: 0 5px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--panel);
-  box-shadow: var(--shadow-lg);
+  box-shadow: 0 2px 5px rgb(0 0 0 / 12%);
+  /* 提示文字用 0.75em，跟着这个走 */
+  font-size: 14px;
 }
 
 .link-action-item {
-  display: inline-flex;
-  flex: 1;
+  /* 提示的定位上下文：按钮不设 position，伪元素才会挂在这一层上 */
+  position: relative;
+  display: flex;
   align-items: center;
   justify-content: center;
-  gap: 5px;
-  min-height: 30px;
-  padding: 0 6px;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--text-2);
-  font-family: inherit;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background var(--dur) var(--ease-out), color var(--dur) var(--ease-out);
+  height: 40px;
+  padding: 4px;
 }
 
-.link-action-item:hover,
-.link-action-item:focus-visible {
-  background: var(--brand-soft);
-  color: var(--brand-hover);
+.link-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 32px;
+  padding: 0 8px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+  transition: background var(--dur) var(--ease-out);
+}
+
+.link-action-btn:hover,
+.link-action-btn:focus-visible {
+  background: var(--panel-hover);
 }
 
 .link-action-icon {
@@ -141,8 +158,45 @@ function openLink() {
 }
 
 .link-action-icon :deep(svg) {
-  width: 15px;
-  height: 15px;
-  fill: currentColor;
+  width: 14px;
+  height: 14px;
+  fill: var(--text-2);
+}
+
+/* 悬停提示：文案、箭头、位置和渐显节奏都照编辑模式那条来 */
+.link-action-btn::before {
+  content: attr(data-tooltip);
+  position: absolute;
+  top: 40px;
+  padding: 5px 10px;
+  border-radius: 5px;
+  background: var(--brand);
+  color: var(--panel);
+  font-size: 0.75em;
+  text-align: center;
+  white-space: pre;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.6s;
+  z-index: 1;
+}
+
+.link-action-btn::after {
+  content: '';
+  position: absolute;
+  top: 30px;
+  border: 5px solid transparent;
+  border-bottom-color: var(--brand);
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.6s;
+}
+
+.link-action-btn:hover::before,
+.link-action-btn:hover::after,
+.link-action-btn:focus-visible::before,
+.link-action-btn:focus-visible::after {
+  opacity: 1;
+  visibility: visible;
 }
 </style>

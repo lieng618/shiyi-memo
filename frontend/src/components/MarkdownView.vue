@@ -14,9 +14,9 @@ const props = defineProps<{
 const containerRef = ref<HTMLElement | null>(null)
 const { viewerVisible, viewerUrls, viewerIndex, attach } = useImageLightbox()
 
-/** 快捷条的宽度写死在 LinkActionBar 的样式里，这里按同一个值预留 */
-const BAR_WIDTH = 196
-const BAR_HEIGHT = 40
+/** 快捷条的尺寸写死在 LinkActionBar 的样式里（88 × 42），这里按同一组值预留 */
+const BAR_WIDTH = 88
+const BAR_HEIGHT = 42
 const BAR_GAP = 8
 
 const bar = ref<{ url: string; top: number; left: number } | null>(null)
