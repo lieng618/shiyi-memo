@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { onBeforeRouteLeave, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   CopyDocument,
@@ -14,12 +14,14 @@ import {
   Star,
   StarFilled,
 } from '@element-plus/icons-vue'
-import { memoApi, tagApi } from '@/api'
-import type { MemoSummary, Tag } from '@/types'
+import { memoApi } from '@/api'
+import type { MemoSummary, PageResult } from '@/types'
 import { formatTime } from '@/utils/format'
 import { copyText } from '@/utils/clipboard'
 import { useNotesFilter } from '@/composables/useNotesFilter'
-import { useCreateNote } from '@/composables/useCreateNote'
+import { useNotesCache } from '@/composables/useNotesCache'
+import { useTagsCache } from '@/composables/useTagsCache'
+import { prefetchNoteEditor, useCreateNote } from '@/composables/useCreateNote'
 
 const PAGE_SIZE = 20
 /** 后端单次最多返回 100 条，静默刷新按这个上限取回已加载的范围 */
@@ -34,36 +36,59 @@ const TOOLTIP_DELAY = 500
 const router = useRouter()
 const createNote = useCreateNote()
 const { keywordInput, keyword, activeTagIds, toggleTag, clear, hasFilter } = useNotesFilter()
+const notesCache = useNotesCache()
+const { tags, load: loadTagsFromCache } = useTagsCache()
 
-const notes = ref<MemoSummary[]>([])
-const total = ref(0)
+/** 列表内容挂在模块级缓存上：从详情页返回时能立刻画出上次那一屏 */
+const notes = notesCache.records
+const total = notesCache.total
+const hasAnyNotes = notesCache.hasAnyNotes
 const loading = ref(false)
 const loadingMore = ref(false)
-const tags = ref<Tag[]>([])
 const shareDialog = ref(false)
 const shareNote = ref<MemoSummary | null>(null)
 const shareUrl = ref('')
 const shareLoading = ref(false)
 const shareEnabled = ref(false)
-/** 一条笔记都没有时不显示搜索框（搜索无结果时仍保留，方便改关键词） */
-const hasAnyNotes = ref(false)
-
 const filtered = computed(() => hasFilter())
 const hasMore = computed(() => notes.value.length < total.value)
 
 watch([keyword, activeTagIds], () => void load(), { deep: true })
 
 onMounted(() => {
-  void loadTags()
-  void load()
+  loadTags()
+  // 列表页整体跟着窗口滚：位置记在缓存里，回来时由路由的 scrollBehavior 落回原处
+  window.addEventListener('scroll', rememberScroll, { passive: true })
+  const key = currentKey()
+  if (notesCache.matches(key)) {
+    // 上次的列表还在内存里：先原样画出来，再静默对齐服务端
+    loading.value = false
+    void refreshQuiet()
+  } else {
+    void load()
+  }
 })
 
-async function loadTags() {
-  try {
-    tags.value = await tagApi.list()
-  } catch {
-    /* 标签只是辅助筛选 */
-  }
+onBeforeUnmount(() => {
+  window.removeEventListener('scroll', rememberScroll)
+})
+
+/** 离开列表页就停止记录：下一页自己滚到顶部，别把那个位置记成列表的位置 */
+onBeforeRouteLeave(() => {
+  window.removeEventListener('scroll', rememberScroll)
+})
+
+function rememberScroll() {
+  notesCache.setScrollTop(window.scrollY)
+}
+
+function currentKey() {
+  return notesCache.keyOf(keyword.value, activeTagIds.value)
+}
+
+function loadTags() {
+  // 标签只是辅助筛选：有缓存直接用，失败也不打扰用户
+  void loadTagsFromCache().catch(() => {})
 }
 
 function fetchNotes(page: number, size: number) {
@@ -77,14 +102,11 @@ function fetchNotes(page: number, size: number) {
 
 /** 首次进入或切换筛选条件：只有这里才显示骨架屏 */
 async function load() {
+  const key = currentKey()
   loading.value = true
   try {
     const result = await fetchNotes(1, PAGE_SIZE)
-    notes.value = result.records
-    total.value = result.total
-    if (!filtered.value) {
-      hasAnyNotes.value = result.total > 0
-    }
+    applyResult(key, result)
   } finally {
     loading.value = false
   }
@@ -95,17 +117,27 @@ async function load() {
  * 骨架屏不会闪、滚动位置不会跳，条目只会平滑地换位。
  */
 async function refreshQuiet() {
+  const key = currentKey()
   const size = Math.min(MAX_PAGE_SIZE, Math.max(PAGE_SIZE, notes.value.length))
   try {
     const result = await fetchNotes(1, size)
-    notes.value = result.records
-    total.value = result.total
-    if (!filtered.value) {
-      hasAnyNotes.value = result.total > 0
+    if (key !== currentKey()) {
+      // 请求期间换了筛选条件，这批结果已经过期，丢掉
+      return
     }
+    applyResult(key, result)
   } catch {
     /* 刷新失败就保留原列表，错误提示由 http 拦截器负责 */
   }
+}
+
+/** 写回缓存：列表内容 + 总数 + 「一条笔记都没有」这个整体状态 */
+function applyResult(key: string, result: PageResult<MemoSummary>) {
+  if (key !== currentKey()) {
+    return
+  }
+  const anyNotes = filtered.value ? hasAnyNotes.value : result.total > 0
+  notesCache.remember(key, result.records, result.total, anyNotes)
 }
 
 async function loadMore() {
@@ -120,6 +152,7 @@ async function loadMore() {
     if (appended.length) {
       notes.value = [...notes.value, ...appended]
       total.value = result.total
+      notesCache.remember(currentKey(), notes.value, total.value, hasAnyNotes.value)
     } else {
       // 没有新增说明已经取到底了，把「加载更多」收起来
       total.value = notes.value.length
@@ -171,8 +204,15 @@ async function removeNote(note: MemoSummary) {
     }
     return
   }
+  notesCache.forgetDetail(note.id)
   ElMessage.success('已删除')
   await refreshQuiet()
+}
+
+/** 清除筛选：顺手把列表滚回顶部 */
+function clearFilters() {
+  clear()
+  window.scrollTo({ top: 0 })
 }
 
 async function openNote(id: number) {
@@ -260,7 +300,7 @@ async function toggleShare(value: string | number | boolean) {
           <span>{{ tag.name }}</span>
           <span v-if="tag.memoCount" class="tnum count">{{ tag.memoCount }}</span>
         </button>
-        <button v-if="filtered" type="button" class="clear-chip" @click="clear">清除筛选</button>
+        <button v-if="filtered" type="button" class="clear-chip" @click="clearFilters">清除筛选</button>
       </div>
 
       <div v-if="loading" class="skeleton-wrap">
@@ -271,7 +311,7 @@ async function toggleShare(value: string | number | boolean) {
         <span class="empty-icon"><el-icon><Notebook /></el-icon></span>
         <template v-if="filtered">
           <p>没有匹配的笔记，换个关键词或清掉筛选试试。</p>
-          <el-button @click="clear">清除筛选</el-button>
+          <el-button @click="clearFilters">清除筛选</el-button>
         </template>
         <template v-else>
           <p>还没有笔记，写下第一条吧。</p>
@@ -288,7 +328,13 @@ async function toggleShare(value: string | number | boolean) {
             :style="{ animationDelay: `${Math.min(index, 10) * 30}ms` }"
           >
             <article class="note-row">
-              <button type="button" class="note-main" @click="openNote(note.id)">
+              <!-- 悬停某条笔记就预取编辑页：点开时内容已经就位 -->
+              <button
+                type="button"
+                class="note-main"
+                @click="openNote(note.id)"
+                @mouseenter="prefetchNoteEditor"
+              >
                 <img
                   v-if="note.coverUrl"
                   class="note-cover"

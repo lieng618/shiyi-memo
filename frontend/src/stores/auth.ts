@@ -2,6 +2,8 @@ import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { ElMessage } from 'element-plus'
 import { authApi } from '@/api'
+import { useNotesCache } from '@/composables/useNotesCache'
+import { useTagsCache } from '@/composables/useTagsCache'
 import type { User } from '@/types'
 
 export const useAuthStore = defineStore('auth', () => {
@@ -10,6 +12,12 @@ export const useAuthStore = defineStore('auth', () => {
   const loading = ref(false)
 
   const isLoggedIn = computed(() => user.value !== null)
+
+  /** 身份变了，本地缓存的内容就不属于当前用户了 */
+  function dropCaches() {
+    useNotesCache().clear()
+    useTagsCache().clear()
+  }
 
   async function fetchMe() {
     loading.value = true
@@ -36,6 +44,7 @@ export const useAuthStore = defineStore('auth', () => {
    */
   function logout() {
     user.value = null
+    dropCaches()
     void authApi.logout().catch(() => {
       ElMessage.warning('网络异常，未能通知服务器退出登录')
     })
@@ -43,6 +52,7 @@ export const useAuthStore = defineStore('auth', () => {
 
   function clear() {
     user.value = null
+    dropCaches()
   }
 
   return { user, loading, initialized, isLoggedIn, fetchMe, login, logout, clear }

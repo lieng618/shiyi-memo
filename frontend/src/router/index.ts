@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import AppShell from '@/layouts/AppShell.vue'
+import { useNotesCache } from '@/composables/useNotesCache'
 import { useAuthStore } from '@/stores/auth'
 
 const routes: RouteRecordRaw[] = [
@@ -67,7 +68,17 @@ const routes: RouteRecordRaw[] = [
 const router = createRouter({
   history: createWebHistory(),
   routes,
-  scrollBehavior: () => ({ top: 0 }),
+  scrollBehavior: (to) => {
+    // 回到笔记列表：列表内容和滚动位置都在内存里，直接落回离开前的位置。
+    // 其它页面保持原来的「每次都从顶部开始」。
+    if (to.name === 'notes') {
+      const top = useNotesCache().getScrollTop()
+      if (top > 0) {
+        return { top }
+      }
+    }
+    return { top: 0 }
+  },
 })
 
 router.beforeEach(async (to) => {

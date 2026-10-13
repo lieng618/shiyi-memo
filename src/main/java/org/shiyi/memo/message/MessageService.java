@@ -10,11 +10,13 @@ import org.shiyi.memo.common.PageResult;
 import org.shiyi.memo.message.dto.MessageDtos;
 import org.shiyi.memo.message.entity.UserMessage;
 import org.shiyi.memo.message.mapper.UserMessageMapper;
+import org.shiyi.memo.realtime.RealtimeEventService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.function.Consumer;
 
 @Service
@@ -25,8 +27,11 @@ public class MessageService {
     public static final String TYPE_FILE_BLOCKED = "FILE_BLOCKED";
     public static final String TYPE_MEMO_REMOVED = "MEMO_REMOVED";
     public static final String TYPE_WELCOME = "WELCOME";
+    /** 站内信变化推给前端的 SSE 事件名，和 useRealtime 里的监听保持一致 */
+    public static final String MAIL_EVENT = "mail";
 
     private final UserMessageMapper messageMapper;
+    private final RealtimeEventService realtime;
 
     public PageResult<MessageDtos.MessageDto> list(long userId, long page, long size) {
         IPage<UserMessage> result = messageMapper.selectPage(new Page<>(page, size),
@@ -67,6 +72,8 @@ public class MessageService {
     @Transactional
     public void markRead(long userId, List<Long> ids) {
         messageMapper.markRead(userId, ids == null || ids.isEmpty() ? null : ids);
+        // 同一个账号开着多个页面时，别的标签页的角标也跟着归零
+        realtime.sendAfterCommit(userId, MAIL_EVENT, Map.of("event", "read"));
     }
 
     /** 系统自动发信（文件屏蔽、笔记删除等），纯文本 */
@@ -76,6 +83,7 @@ public class MessageService {
         UserMessage message = newMessage(userId, title, type, refMemoId, refFileId, senderName);
         message.setContent(content);
         messageMapper.insert(message);
+        notifyNewMessage(message);
         return message;
     }
 
@@ -111,7 +119,23 @@ public class MessageService {
         message.setContentHtml(html);
         message.setSendAt(sendAt);
         messageMapper.insert(message);
+        notifyNewMessage(message);
         return message;
+    }
+
+    /**
+     * 新信落库后顺着 SSE 推一下，前端就不用靠轮询发现它。
+     * 定时信还没到点不算送达，到点后的可见性仍然交给前端的低频兜底刷新。
+     */
+    private void notifyNewMessage(UserMessage message) {
+        if (message.getSendAt() != null && message.getSendAt().isAfter(LocalDateTime.now())) {
+            return;
+        }
+        realtime.sendAfterCommit(message.getUserId(), MAIL_EVENT, Map.of(
+                "event", "created",
+                "id", message.getId(),
+                "title", message.getTitle(),
+                "type", message.getType()));
     }
 
     private UserMessage newMessage(long userId, String title, String type,

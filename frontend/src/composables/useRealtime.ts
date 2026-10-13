@@ -1,9 +1,10 @@
-type RealtimeEventName = 'chat' | 'friends'
+type RealtimeEventName = 'chat' | 'friends' | 'mail'
 type RealtimeHandler = (data: unknown) => void
 
 const listeners: Record<RealtimeEventName, Set<RealtimeHandler>> = {
   chat: new Set(),
   friends: new Set(),
+  mail: new Set(),
 }
 
 let source: EventSource | null = null
@@ -24,6 +25,8 @@ export function startRealtime() {
   source = new EventSource('/api/events/stream')
   source.addEventListener('chat', (event) => dispatch('chat', event as MessageEvent<string>))
   source.addEventListener('friends', (event) => dispatch('friends', event as MessageEvent<string>))
+  // 站内信的新信 / 已读回执：事件名用 mail，避开 EventSource 自带的 message
+  source.addEventListener('mail', (event) => dispatch('mail', event as MessageEvent<string>))
   source.onerror = () => {
     source?.close()
     source = null

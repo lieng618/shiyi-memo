@@ -5,7 +5,7 @@ import { Bell, Edit, Link, User } from '@element-plus/icons-vue'
 import { friendApi, messageApi } from '@/api'
 import type { FriendNotification, UserMessage } from '@/types'
 import { useAuthStore } from '@/stores/auth'
-import { useCreateNote } from '@/composables/useCreateNote'
+import { prefetchNoteEditor, useCreateNote } from '@/composables/useCreateNote'
 import { useAppVersion } from '@/composables/useAppVersion'
 import { useUpdater } from '@/composables/useUpdater'
 import { useFriendSummary } from '@/composables/useFriendSummary'
@@ -41,9 +41,13 @@ const messagePreviewOpen = ref(false)
 const messagePreviewLoading = ref(false)
 const unreadMessages = ref<UserMessage[]>([])
 
+/** 兜底轮询间隔：SSE 正常时它什么都不会变，只为兜住断线和定时站内信 */
+const FALLBACK_POLL_MS = 60_000
+
 let timer: ReturnType<typeof setInterval> | undefined
 let offChat: (() => void) | undefined
 let offFriends: (() => void) | undefined
+let offMail: (() => void) | undefined
 
 onMounted(() => {
   void refreshUnread()
@@ -57,20 +61,43 @@ onMounted(() => {
   offFriends = onRealtime('friends', () => {
     void loadFriendNotifications(true)
   })
-  // 站内信可能随时被后台发出，这里定时拉一下未读数
+  // 新站内信（以及别的标签页里的已读）由服务端推过来，不再靠轮询发现
+  offMail = onRealtime('mail', () => {
+    void refreshUnread()
+    if (messagePreviewOpen.value) {
+      void loadUnreadMessages(true)
+    }
+  })
+  // 慢轮询只兜底（SSE 掉线、定时站内信到点）：只打两个很轻的计数接口，
+  // 列表接口只在对应弹层开着的时候才拉
   timer = setInterval(() => {
     void refreshUnread()
     void refreshFriendSummary()
-    void loadFriendNotifications(true)
-    void loadUnreadMessages(true)
-  }, 60_000)
+    if (friendPreviewOpen.value) {
+      void loadFriendNotifications(true)
+    }
+    if (messagePreviewOpen.value) {
+      void loadUnreadMessages(true)
+    }
+  }, FALLBACK_POLL_MS)
+  document.addEventListener('visibilitychange', onVisibilityChange)
 })
 
 onBeforeUnmount(() => {
   clearInterval(timer)
+  document.removeEventListener('visibilitychange', onVisibilityChange)
   offChat?.()
   offFriends?.()
+  offMail?.()
 })
+
+/** 切回标签页时对齐一次角标：后台期间 SSE 可能断过，漏掉的事件靠这一次补上 */
+function onVisibilityChange() {
+  if (document.visibilityState === 'visible') {
+    void refreshUnread()
+    void refreshFriendSummary()
+  }
+}
 
 async function loadFriendNotifications(silent = false) {
   if (!silent) {
@@ -148,7 +175,15 @@ async function onNew() {
 
       <!-- 右侧单行：主操作 + 站内信 + 账号，不再上下堆叠 -->
       <div class="header-actions">
-        <button type="button" class="new-note-btn" :disabled="creating" @click="onNew">
+        <!-- 悬停 / 聚焦就先把编辑页代码拉下来：点下去时只剩建库请求和渲染 -->
+        <button
+          type="button"
+          class="new-note-btn"
+          :disabled="creating"
+          @click="onNew"
+          @mouseenter="prefetchNoteEditor"
+          @focus="prefetchNoteEditor"
+        >
           <el-icon :size="16"><Edit /></el-icon>
           <span>新建笔记</span>
         </button>

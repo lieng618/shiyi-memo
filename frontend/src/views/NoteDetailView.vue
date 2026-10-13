@@ -2,10 +2,12 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import { ArrowLeft } from '@element-plus/icons-vue'
-import { memoApi, tagApi } from '@/api'
-import type { MemoDetail, Tag } from '@/types'
+import { memoApi } from '@/api'
+import type { MemoDetail } from '@/types'
 import { formatFull } from '@/utils/format'
 import { debounce } from '@/composables/useDebounce'
+import { useNotesCache } from '@/composables/useNotesCache'
+import { useTagsCache } from '@/composables/useTagsCache'
 import { exportNote, type ExportFormat } from '@/utils/noteExport'
 import RichEditor, { exportTriggerStore } from '@/components/RichEditor.vue'
 
@@ -14,6 +16,8 @@ const flushBridge = globalThis as unknown as { __shiyiFlushEdits?: (() => Promis
 
 const route = useRoute()
 const router = useRouter()
+const notesCache = useNotesCache()
+const { tags, load: loadTagsFromCache, invalidate: invalidateTags } = useTagsCache()
 
 const noteId = computed(() => Number(route.params.id))
 const detail = ref<MemoDetail | null>(null)
@@ -21,7 +25,6 @@ const loading = ref(true)
 const title = ref('')
 const contentHtml = ref('')
 const tagNames = ref<string[]>([])
-const tags = ref<Tag[]>([])
 const saveState = ref<'idle' | 'saving' | 'saved' | 'error'>('idle')
 const savedAt = ref<string | null>(null)
 const titleRef = ref<HTMLInputElement | null>(null)
@@ -32,6 +35,8 @@ let applyingRemote = false
 let changeVersion = 0
 let savedVersion = 0
 let saveQueue: Promise<void> = Promise.resolve()
+/** 上一次和服务端一致的标签集合，用来判断保存后要不要重新拉标签 */
+let syncedTagNames = ''
 
 const tagOptions = computed(() => tags.value.map((tag) => tag.name))
 const saveLabel = computed(() => {
@@ -65,7 +70,13 @@ onMounted(async () => {
     scheduleSave.cancel()
     if (dirty.value) await save()
   }
-  await Promise.all([loadDetail(), loadTags()])
+  // 刚从列表页点进来时详情还在内存里：先画出来，接口结果随后对齐
+  const cached = notesCache.detailOf(noteId.value)
+  if (cached) {
+    loading.value = false
+    await applyDetail(cached)
+  }
+  await Promise.all([loadDetail(), refreshTags()])
   window.addEventListener('keydown', onKeydown)
   await nextTick()
   titleRef.value?.focus()
@@ -93,29 +104,42 @@ function onKeydown(event: KeyboardEvent) {
   }
 }
 
-async function loadTags() {
-  try {
-    tags.value = await tagApi.list()
-  } catch {
+function refreshTags() {
+  return loadTagsFromCache().catch(() => {
     /* 标签加载失败不影响正文编辑 */
-  }
+  })
+}
+
+/** 把一份详情灌进编辑器；期间不触发自动保存 */
+async function applyDetail(data: MemoDetail) {
+  applyingRemote = true
+  detail.value = data
+  title.value = data.title
+  contentHtml.value = data.contentHtml ?? ''
+  tagNames.value = data.tags.map((tag) => tag.name)
+  syncedTagNames = tagSignature(tagNames.value)
+  changeVersion = 0
+  savedVersion = 0
+  dirty.value = false
+  saveState.value = 'idle'
+  await nextTick()
+  applyingRemote = false
+}
+
+function tagSignature(names: string[]) {
+  return [...names].sort().join('\u0000')
 }
 
 async function loadDetail() {
-  loading.value = true
   try {
     const data = await memoApi.get(noteId.value)
-    applyingRemote = true
-    detail.value = data
-    title.value = data.title
-    contentHtml.value = data.contentHtml ?? ''
-    tagNames.value = data.tags.map((tag) => tag.name)
-    changeVersion = 0
-    savedVersion = 0
-    dirty.value = false
-    saveState.value = 'idle'
-    await nextTick()
-    applyingRemote = false
+    notesCache.rememberDetail(data)
+    if (changeVersion === 0 && !dirty.value) {
+      // 用户还没动过编辑器，才用服务端的版本覆盖（否则会把刚打的字冲掉）
+      await applyDetail(data)
+    } else {
+      detail.value = data
+    }
   } catch {
     await router.replace('/notes')
   } finally {
@@ -144,11 +168,18 @@ async function persist() {
       tagNames: tagNames.value,
     })
     detail.value = updated
+    notesCache.rememberDetail(updated)
     savedAt.value = formatFull(updated.updatedAt)
     saveState.value = 'saved'
     savedVersion = Math.max(savedVersion, version)
     dirty.value = savedVersion < changeVersion
-    void loadTags()
+    // 标签只有在真的增删过时才需要重新拉：否则每次自动保存都会多打一个聚合查询
+    const savedTags = tagSignature(updated.tags.map((tag) => tag.name))
+    if (savedTags !== syncedTagNames) {
+      syncedTagNames = savedTags
+      invalidateTags()
+      void refreshTags()
+    }
   } catch {
     saveState.value = 'error'
   }
