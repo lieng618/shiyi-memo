@@ -270,14 +270,14 @@ async function onExport(format: ExportFormat) {
       />
       <h1 v-else class="title-text">{{ title || '无标题' }}</h1>
 
-      <!-- 阅读 / 编辑切换：只读预览不挂编辑器，想改的时候再点回来 -->
+      <!-- 阅读 / 编辑切换：预览不挂编辑器，想改的时候再点回来 -->
       <div class="mode-switch" role="group" aria-label="查看方式">
         <button
           type="button"
           class="mode-btn"
           :class="{ on: mode === 'read' }"
           :aria-pressed="mode === 'read'"
-          title="只读预览"
+          title="预览"
           @click="setViewMode('read')"
         >
           <el-icon :size="15"><Reading /></el-icon>
@@ -332,7 +332,7 @@ async function onExport(format: ExportFormat) {
       <el-skeleton v-if="loading" :rows="6" animated class="editor-skeleton" />
       <template v-else>
         <div v-show="mode === 'read'" class="read-view">
-          <MarkdownView v-if="!showEmptyHint" :content="contentHtml" />
+          <MarkdownView v-if="!showEmptyHint" :content="contentHtml" link-actions />
           <p v-else class="read-empty muted">还没有正文，点「编辑」写点什么。</p>
         </div>
         <RichEditor
@@ -570,9 +570,17 @@ async function onExport(format: ExportFormat) {
 }
 
 @media (max-width: 560px) {
-  /* 窄屏只留图标，把宽度让给标题 */
+  /* 窄屏只留图标，把宽度让给标题。这里不能用 display:none：
+     文字一旦移出无障碍树，按钮就没有读屏名字了 */
   .mode-label {
-    display: none;
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
 
   .mode-btn {

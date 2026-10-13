@@ -38,6 +38,7 @@ declare module 'vue' {
     ElTooltip: typeof import('element-plus/es')['ElTooltip']
     EmojiPicker: typeof import('./components/EmojiPicker.vue')['default']
     FilePreview: typeof import('./components/FilePreview.vue')['default']
+    LinkActionBar: typeof import('./components/LinkActionBar.vue')['default']
     MarkdownView: typeof import('./components/MarkdownView.vue')['default']
     MemoSharePicker: typeof import('./components/MemoSharePicker.vue')['default']
     OpenShareDialog: typeof import('./components/OpenShareDialog.vue')['default']

@@ -2,11 +2,25 @@
 import { computed, nextTick, ref, watch } from 'vue'
 import { sanitizeRichText } from '@/utils/richText'
 import { useImageLightbox } from '@/composables/useImageLightbox'
+import LinkActionBar from '@/components/LinkActionBar.vue'
 
-const props = defineProps<{ content?: string | null; publicToken?: string | null }>()
+const props = defineProps<{
+  content?: string | null
+  publicToken?: string | null
+  /** 点链接时弹「复制链接 / 打开链接」快捷条（笔记阅读态用；分享页保持原样，点了直接跳） */
+  linkActions?: boolean
+}>()
 
 const containerRef = ref<HTMLElement | null>(null)
 const { viewerVisible, viewerUrls, viewerIndex, attach } = useImageLightbox()
+
+/** 快捷条的宽度写死在 LinkActionBar 的样式里，这里按同一个值预留 */
+const BAR_WIDTH = 196
+const BAR_HEIGHT = 40
+const BAR_GAP = 8
+
+const bar = ref<{ url: string; top: number; left: number } | null>(null)
+let barAnchor: HTMLAnchorElement | null = null
 
 const html = computed(() => {
   const rendered = sanitizeRichText(props.content ?? '')
@@ -15,6 +29,44 @@ const html = computed(() => {
 
 // v-html 里的 DOM Vue 不接管，渲染后给图片挂上点开看大图
 watch(html, () => nextTick(() => attach(containerRef.value)), { immediate: true })
+// 换了内容（比如切到另一篇笔记）就把旧条子收掉，别留在原来的位置
+watch(() => props.content, () => closeBar())
+
+/** 正文里的链接也是 v-html 插进来的，用事件委托找点中的那一个 */
+function onContentClick(event: MouseEvent) {
+  if (!props.linkActions) return
+  const anchor = (event.target as HTMLElement | null)?.closest?.('a[href]') as HTMLAnchorElement | null
+  if (!anchor) {
+    closeBar()
+    return
+  }
+  // 阅读时先别直接跳走：把编辑模式那两条操作摆出来，由用户自己选
+  event.preventDefault()
+  barAnchor = anchor
+  showBar(anchor)
+}
+
+function showBar(anchor: HTMLAnchorElement) {
+  const rect = anchor.getBoundingClientRect()
+  const left = Math.min(
+    Math.max(BAR_GAP, rect.left),
+    Math.max(BAR_GAP, window.innerWidth - BAR_WIDTH - BAR_GAP),
+  )
+  // 默认贴在链接上方；顶上放不下就翻到下面
+  const above = rect.top - BAR_HEIGHT - BAR_GAP
+  const top = above >= BAR_GAP
+    ? above
+    : Math.min(rect.bottom + BAR_GAP, Math.max(BAR_GAP, window.innerHeight - BAR_HEIGHT - BAR_GAP))
+  bar.value = { url: anchor.href, top, left }
+}
+
+function closeBar() {
+  if (!bar.value) return
+  bar.value = null
+  // 收起来时把焦点还给刚才那个链接，键盘操作不会掉到 body 上
+  barAnchor?.focus({ preventScroll: true })
+  barAnchor = null
+}
 
 function rewritePublicAssets(html: string, token: string) {
   const documentFragment = new DOMParser().parseFromString(html, 'text/html')
@@ -37,7 +89,8 @@ function rewritePublicAssets(html: string, token: string) {
 </script>
 
 <template>
-  <div ref="containerRef" class="markdown-body rich-view" v-html="html" />
+  <div ref="containerRef" class="markdown-body rich-view" v-html="html" @click="onContentClick" />
+  <LinkActionBar v-if="bar" :url="bar.url" :top="bar.top" :left="bar.left" @close="closeBar" />
   <el-image-viewer
     v-if="viewerVisible"
     :url-list="viewerUrls"
