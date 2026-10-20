@@ -27,8 +27,14 @@ public class AppProperties {
     public static class Jwt {
         /** HS256 密钥，长度至少 32 字节 */
         private String secret = "dev-only-secret-please-change-me-0123456789";
-        /** 登录有效期（小时），默认 7 天 */
-        private long ttlHours = 168;
+        /** 单张令牌有效期（小时）。开启滑动续期后，它相当于「闲置多久需要重新登录」，默认 30 天 */
+        private long ttlHours = 720;
+        /** 从登录算起的绝对上限（小时），不管怎么续期到期都要重新登录，默认 180 天 */
+        private long absoluteMaxHours = 4320;
+        /** 距上次签发超过这个时长才重新签一张，避免每个请求都写 Cookie，默认每天一次 */
+        private long refreshIntervalHours = 24;
+        /** 使用中自动续期；关掉就退回固定有效期 */
+        private boolean sliding = true;
         private String cookieName = "MEMO_TOKEN";
         /** 挂上 HTTPS 之后改成 true */
         private boolean secureCookie = false;

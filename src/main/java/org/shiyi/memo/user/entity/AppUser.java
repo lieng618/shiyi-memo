@@ -21,6 +21,8 @@ public class AppUser {
     /** 头像对应的附件 id，可以为 null */
     private Long avatarFileId;
     private String passwordHash;
+    /** 令牌版本：改密码、被禁用时 +1，已经签发的旧令牌随之失效 */
+    private Long tokenVersion;
     private Long levelId;
     private Integer status;
     private Long storageUsed;

@@ -167,6 +167,10 @@ Windows 双击根目录的 `start-windows.bat`，或在终端执行：
 | `spring.mail.*` | 验证码邮件 SMTP |
 | `app.jwt.secret` | 登录令牌密钥，至少 32 字节，公网务必替换 |
 | `app.jwt.secure-cookie` | 启用 HTTPS 后设为 `true` |
+| `app.jwt.ttl-hours` | 单张令牌有效期（默认 720 小时）；开启滑动续期后相当于「闲置多久需要重新登录」 |
+| `app.jwt.absolute-max-hours` | 从登录算起的绝对上限（默认 4320 小时），到期必须重新登录 |
+| `app.jwt.refresh-interval-hours` | 至少间隔多久才续签一次（默认 24 小时） |
+| `app.jwt.sliding` | 是否在使用中自动续期，默认 `true` |
 | `app.mail.enabled` | 是否真实发送邮件 |
 | `app.mail.expose-code` | 本地联调时由接口返回验证码，线上必须为 `false` |
 | `app.admin.username/password` | 后台控制台账号，与普通用户无关 |
@@ -222,6 +226,10 @@ MySQL 数据存在 Docker 卷 `mysql-data` 里，表结构由 Flyway 自动创�
 | `MYSQL_PASSWORD` / `MYSQL_ROOT_PASSWORD` | 见 `.env.example` | 数据库密码 |
 | `APP_JWT_SECRET` | 开发用默认值 | 登录令牌密钥，至少 32 字节，公网务必换成随机值 |
 | `APP_JWT_SECURE_COOKIE` | `false` | 启用 HTTPS 后设为 `true` |
+| `APP_JWT_TTL_HOURS` | `720` | 单张令牌有效期，即闲置多少小时需要重新登录 |
+| `APP_JWT_ABSOLUTE_MAX_HOURS` | `4320` | 从登录算起的绝对上限，到期必须重新登录 |
+| `APP_JWT_REFRESH_INTERVAL_HOURS` | `24` | 至少间隔多久才自动续签一次 |
+| `APP_JWT_SLIDING` | `true` | 是否在使用中自动续期 |
 | `APP_ADMIN_USERNAME` / `APP_ADMIN_PASSWORD` | `admin` / `change-me` | 后台控制台账号 |
 | `APP_BASE_URL` | `http://localhost:8080` | 站点对外地址，邮件链接会用它 |
 | `APP_SECURITY_ALLOW_REGISTER` | `true` | 是否允许新邮箱自助注册 |

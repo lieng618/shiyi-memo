@@ -55,6 +55,15 @@ public class UserService {
             .expireAfterWrite(Duration.ofMinutes(10))
             .build();
 
+    /**
+     * 令牌版本只在改密码 / 封号时变化，没必要每个请求都查库。
+     * 5 分钟的缓存意味着多实例部署时，其它实例最晚 5 分钟感知到吊销。
+     */
+    private final Cache<Long, Long> tokenVersionCache = Caffeine.newBuilder()
+            .maximumSize(10_000)
+            .expireAfterWrite(Duration.ofMinutes(5))
+            .build();
+
     public AppUser get(long id) {
         AppUser user = userMapper.selectById(id);
         if (user == null) {
@@ -264,12 +273,31 @@ public class UserService {
         return get(userId);
     }
 
-    /** 写入 BCrypt 之后的密码哈希 */
-    public void updatePasswordHash(long userId, String hash) {
-        AppUser patch = new AppUser();
-        patch.setId(userId);
-        patch.setPasswordHash(hash);
-        userMapper.updateById(patch);
+    /** 写入 BCrypt 之后的密码哈希，同时吊销该用户已经签发的令牌；返回新的版本号 */
+    public long updatePasswordHash(long userId, String hash) {
+        userMapper.updatePasswordHashAndBumpVersion(userId, hash);
+        tokenVersionCache.invalidate(userId);
+        return tokenVersionOf(userId);
+    }
+
+    /** 用户当前的令牌版本；用户不存在返回 -1，任何令牌都对不上 */
+    public long tokenVersionOf(long userId) {
+        Long cached = tokenVersionCache.getIfPresent(userId);
+        if (cached != null) {
+            return cached;
+        }
+        AppUser user = userMapper.selectOne(Wrappers.<AppUser>lambdaQuery()
+                .select(AppUser::getTokenVersion)
+                .eq(AppUser::getId, userId));
+        long version = user == null || user.getTokenVersion() == null ? -1L : user.getTokenVersion();
+        tokenVersionCache.put(userId, version);
+        return version;
+    }
+
+    /** 让该用户的所有旧令牌立即失效（封号、退出所有设备） */
+    public void bumpTokenVersion(long userId) {
+        userMapper.bumpTokenVersion(userId);
+        tokenVersionCache.invalidate(userId);
     }
 
     public static String normalizeEmail(String email) {

@@ -46,6 +46,11 @@ services:
       SPRING_DATASOURCE_PASSWORD: ${MYSQL_PASSWORD:-shiyi-memo}
       # 登录令牌密钥,至少 32 字节;公网部署必须换成随机值
       APP_JWT_SECRET: ${APP_JWT_SECRET:-dev-only-secret-please-change-me-0123456789}
+      # 登录状态:闲置 30 天过期、最多续到 180 天,每天最多续签一次
+      APP_JWT_TTL_HOURS: ${APP_JWT_TTL_HOURS:-720}
+      APP_JWT_ABSOLUTE_MAX_HOURS: ${APP_JWT_ABSOLUTE_MAX_HOURS:-4320}
+      APP_JWT_REFRESH_INTERVAL_HOURS: ${APP_JWT_REFRESH_INTERVAL_HOURS:-24}
+      APP_JWT_SLIDING: ${APP_JWT_SLIDING:-true}
       APP_ADMIN_USERNAME: ${APP_ADMIN_USERNAME:-admin}
       APP_ADMIN_PASSWORD: ${APP_ADMIN_PASSWORD:-change-me}
       # 站点对外地址,邮件正文里的链接会用它

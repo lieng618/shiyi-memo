@@ -6,15 +6,14 @@ import lombok.extern.slf4j.Slf4j;
 import org.shiyi.memo.auth.dto.AuthDtos;
 import org.shiyi.memo.common.ApiException;
 import org.shiyi.memo.common.SimpleRateLimiter;
-import org.shiyi.memo.config.AppProperties;
 import org.shiyi.memo.message.WelcomeLetterService;
+import org.shiyi.memo.security.AuthContext;
+import org.shiyi.memo.security.AuthCookies;
 import org.shiyi.memo.security.AuthUser;
 import org.shiyi.memo.security.JwtService;
 import org.shiyi.memo.user.UserService;
 import org.shiyi.memo.user.dto.UserDtos;
 import org.shiyi.memo.user.entity.AppUser;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.ResponseCookie;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -35,7 +34,7 @@ public class AuthService {
     private final UserService userService;
     private final MailService mailService;
     private final JwtService jwtService;
-    private final AppProperties properties;
+    private final AuthCookies authCookies;
     private final SimpleRateLimiter rateLimiter;
     private final WelcomeLetterService welcomeLetterService;
 
@@ -106,15 +105,25 @@ public class AuthService {
         return finishLogin(user, response, "密码");
     }
 
-    /** 已登录用户直接设置 / 修改密码，不再重复要求邮箱验证码。 */
-    @Transactional
-    public UserDtos.UserDto changePassword(long userId, UserDtos.UpdatePasswordRequest request) {
+    /**
+     * 已登录用户直接设置 / 修改密码，不再重复要求邮箱验证码。
+     * 密码和令牌版本在同一条 SQL 里原子更新；不包事务，邮件失败也不会回滚已经生效的密码。
+     */
+    public UserDtos.UserDto changePassword(long userId, UserDtos.UpdatePasswordRequest request,
+                                           HttpServletResponse response) {
         AppUser user = userService.requireEnabled(userId);
         boolean hasPassword = user.getPasswordHash() != null && !user.getPasswordHash().isBlank();
 
         passwordService.validateStrength(request.newPassword(), user.getEmail());
 
-        userService.updatePasswordHash(userId, passwordService.encode(request.newPassword()));
+        long tokenVersion = userService.updatePasswordHash(userId, passwordService.encode(request.newPassword()));
+        // 其它设备上的旧令牌已经作废，当前这次操作本身要继续保持登录
+        AuthUser current = AuthContext.require();
+        JwtService.IssuedToken renewed = current.absoluteExpiry() == null
+                ? jwtService.issue(userId, user.getEmail(), AuthUser.ROLE_USER, tokenVersion)
+                : jwtService.renew(current, tokenVersion);
+        authCookies.writeUserToken(response, renewed);
+
         mailService.sendPasswordChanged(user.getEmail(), hasPassword);
         log.info("用户{}登录密码 id={} email={}", hasPassword ? "修改了" : "设置了", userId, user.getEmail());
         return UserDtos.UserDto.from(userService.get(userId), userService.levelOf(user));
@@ -123,11 +132,11 @@ public class AuthService {
     // ---------------- 通用 ----------------
 
     public void logout(HttpServletResponse response) {
-        writeAuthCookie(response, "");
+        authCookies.clearUserToken(response);
     }
 
     public UserDtos.UserDto currentUser() {
-        AppUser user = userService.requireEnabled(org.shiyi.memo.security.AuthContext.requireUserId());
+        AppUser user = userService.requireEnabled(AuthContext.requireUserId());
         return UserDtos.UserDto.from(user, userService.levelOf(user));
     }
 
@@ -138,21 +147,11 @@ public class AuthService {
         userService.touchLastLogin(user.getId());
         // 重新读一次：created_at / last_login_at 是数据库默认值和刚刚那次 update 写进去的
         AppUser fresh = userService.get(user.getId());
-        writeAuthCookie(response, jwtService.issue(fresh.getId(), fresh.getEmail(), AuthUser.ROLE_USER));
+        long tokenVersion = userService.tokenVersionOf(fresh.getId());
+        authCookies.writeUserToken(response,
+                jwtService.issue(fresh.getId(), fresh.getEmail(), AuthUser.ROLE_USER, tokenVersion));
         log.info("用户登录成功 id={} email={} 方式={}", fresh.getId(), fresh.getEmail(), method);
         return new AuthDtos.LoginResponse(UserDtos.UserDto.from(fresh, userService.levelOf(fresh)),
                 jwtService.getTtlSeconds());
-    }
-
-    private void writeAuthCookie(HttpServletResponse response, String token) {
-        AppProperties.Jwt jwt = properties.getJwt();
-        ResponseCookie cookie = ResponseCookie.from(jwt.getCookieName(), token)
-                .httpOnly(true)
-                .secure(jwt.isSecureCookie())
-                .path("/")
-                .maxAge(token.isEmpty() ? Duration.ZERO : Duration.ofSeconds(jwtService.getTtlSeconds()))
-                .sameSite("Lax")
-                .build();
-        response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());
     }
 }

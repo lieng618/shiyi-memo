@@ -154,6 +154,10 @@ public class AdminService {
         } catch (DuplicateKeyException ex) {
             throw ApiException.badRequest("昵称已被使用，换一个吧");
         }
+        // 封号要让已经签发的令牌立刻失效，而不是等它自然过期
+        if (request.status() != null && request.status() == 0) {
+            userService.bumpTokenVersion(userId);
+        }
         AppUser updated = userService.get(userId);
         UserLevel level = levelMap().get(updated.getLevelId());
         return new AdminDtos.AdminUserDto(updated.getId(), updated.getEmail(), updated.getNickname(),

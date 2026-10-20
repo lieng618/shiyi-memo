@@ -51,8 +51,9 @@ public class AuthController {
 
     /** 设置 / 修改登录密码：登录态直接修改 */
     @PutMapping("/password")
-    public UserDtos.UserDto changePassword(@Valid @RequestBody UserDtos.UpdatePasswordRequest request) {
-        return authService.changePassword(AuthContext.requireUserId(), request);
+    public UserDtos.UserDto changePassword(@Valid @RequestBody UserDtos.UpdatePasswordRequest request,
+                                           HttpServletResponse response) {
+        return authService.changePassword(AuthContext.requireUserId(), request, response);
     }
 
     @PublicApi

@@ -7,6 +7,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.shiyi.memo.config.AppProperties;
+import org.shiyi.memo.user.UserService;
 import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
@@ -20,13 +21,24 @@ import java.io.IOException;
 @RequiredArgsConstructor
 public class JwtAuthFilter extends OncePerRequestFilter {
 
+    /** SSE 连接会长期挂着，不在它上面重签；下一次普通接口请求再续 */
+    private static final String EVENT_STREAM_PATH = "/api/events/stream";
+
     private final JwtService jwtService;
     private final AppProperties properties;
+    private final UserService userService;
+    private final AuthCookies authCookies;
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
         try {
+            // 静态资源和页面本身不需要身份，别让带着旧 Cookie 的请求白白查一次库
+            if (!request.getRequestURI().startsWith("/api/")) {
+                chain.doFilter(request, response);
+                return;
+            }
+
             // 后台令牌：只写 AdminContext，不参与备忘录用户的身份
             AuthUser admin = jwtService.parse(readCookie(request, properties.getAdmin().getCookieName()));
             if (admin != null && admin.isAdmin()) {
@@ -35,7 +47,14 @@ public class JwtAuthFilter extends OncePerRequestFilter {
 
             AuthUser user = jwtService.parse(resolveUserToken(request));
             if (user != null && !user.isAdmin()) {
-                AuthContext.set(user);
+                // 版本对不上说明改过密码、被封号或用户已不存在，旧令牌立即失效
+                long tokenVersion = userService.tokenVersionOf(user.id());
+                if (tokenVersion >= 0 && user.tokenVersion() == tokenVersion) {
+                    AuthContext.set(user);
+                    renewIfNeeded(request, response, user, tokenVersion);
+                } else {
+                    authCookies.clearUserToken(response);
+                }
             }
             chain.doFilter(request, response);
         } finally {
@@ -66,5 +85,13 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             }
         }
         return null;
+    }
+
+    private void renewIfNeeded(HttpServletRequest request, HttpServletResponse response,
+                               AuthUser user, long tokenVersion) {
+        if (request.getRequestURI().startsWith(EVENT_STREAM_PATH) || !jwtService.needsRenewal(user)) {
+            return;
+        }
+        authCookies.writeUserToken(response, jwtService.renew(user, tokenVersion));
     }
 }

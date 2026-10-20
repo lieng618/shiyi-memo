@@ -70,7 +70,13 @@ app:
   jwt:
     # 生产环境务必通过环境变量覆盖，长度至少 32 字节
     secret: "dev-only-secret-please-change-me-0123456789"
-    ttl-hours: 168
+    # 单张令牌 30 天；使用中会自动续期，连续 30 天不打开才需要重新登录
+    ttl-hours: 720
+    # 无论怎么续期，从登录算起最多保持 180 天
+    absolute-max-hours: 4320
+    # 每天最多续签一次，避免每个响应都写 Cookie
+    refresh-interval-hours: 24
+    sliding: true
     cookie-name: MEMO_TOKEN
     # 挂上 HTTPS 之后改成 true
     secure-cookie: false

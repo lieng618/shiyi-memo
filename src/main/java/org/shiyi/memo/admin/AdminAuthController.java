@@ -51,7 +51,7 @@ public class AdminAuthController {
             throw ApiException.unauthorized("账号或密码不正确");
         }
         long ttlSeconds = Duration.ofHours(admin.getTtlHours()).toSeconds();
-        writeCookie(response, jwtService.issueAdmin(admin.getUsername()), ttlSeconds);
+        writeCookie(response, jwtService.issueAdmin(admin.getUsername(), ttlSeconds).value(), ttlSeconds);
         return new AdminDtos.LoginResponse(admin.getUsername(), ttlSeconds);
     }
 
