@@ -34,6 +34,13 @@ const html = computed(() => {
 watch(html, () => nextTick(() => {
   attach(containerRef.value)
   enhanceAttachmentLinks(containerRef.value)
+  containerRef.value?.querySelectorAll<'img'>('img').forEach((image) => {
+    if (!image.hasAttribute('loading')) image.setAttribute('loading', 'lazy')
+    if (!image.hasAttribute('decoding')) image.setAttribute('decoding', 'async')
+  })
+  containerRef.value?.querySelectorAll<HTMLMediaElement>('video, audio').forEach((media) => {
+    if (!media.hasAttribute('preload')) media.setAttribute('preload', 'metadata')
+  })
 }), { immediate: true })
 // 换了内容（比如切到另一篇笔记）就把旧条子收掉，别留在原来的位置
 watch(() => props.content, () => closeBar())

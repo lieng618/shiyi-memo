@@ -16,6 +16,7 @@ import {
   type NoteViewMode,
 } from '@/composables/useNoteViewMode'
 import { getEditSessionId } from '@/composables/useEditSession'
+import { requestNoteDetail } from '@/composables/useNotePrefetch'
 import { onRealtime } from '@/composables/useRealtime'
 import { exportNote, type ExportFormat } from '@/utils/noteExport'
 import MarkdownView from '@/components/MarkdownView.vue'
@@ -32,6 +33,8 @@ interface MemoRealtimeEvent {
 }
 
 const EDIT_LEASE_HEARTBEAT_MS = 20_000
+/** 切到阅读后短暂保留租约，连续来回切换时不需要重新走一次申请接口。 */
+const EDIT_LEASE_RELEASE_DELAY_MS = 3_000
 const route = useRoute()
 const router = useRouter()
 const notesCache = useNotesCache()
@@ -39,11 +42,16 @@ const { tags, load: loadTagsFromCache, invalidate: invalidateTags } = useTagsCac
 const editSessionId = getEditSessionId()
 
 const noteId = computed(() => Number(route.params.id))
-const detail = ref<MemoDetail | null>(null)
-const loading = ref(true)
-const title = ref('')
-const contentHtml = ref('')
-const tagNames = ref<string[]>([])
+const cachedAtSetup = notesCache.detailOf(noteId.value)
+/** 缓存先参与第一帧渲染；编辑权等后台校验回来后再以服务端为准。 */
+const initialDetail = cachedAtSetup
+  ? { ...normalizeDetail(cachedAtSetup), editLease: { heldByMe: false } }
+  : null
+const detail = ref<MemoDetail | null>(initialDetail)
+const loading = ref(!initialDetail)
+const title = ref(initialDetail?.title ?? '')
+const contentHtml = ref(initialDetail?.contentHtml ?? '')
+const tagNames = ref(initialDetail?.tags.map((tag) => tag.name) ?? [])
 const saveState = ref<'idle' | 'saving' | 'saved' | 'error' | 'conflict'>('idle')
 const savedAt = ref<string | null>(null)
 const titleRef = ref<HTMLInputElement | null>(null)
@@ -63,10 +71,15 @@ let applyingRemote = false
 let changeVersion = 0
 let savedVersion = 0
 let saveQueue: Promise<void> = Promise.resolve()
-let syncedTagNames = ''
+let syncedTagNames = initialDetail ? tagSignature(initialDetail.tags.map((tag) => tag.name)) : ''
 let leaseTimer: ReturnType<typeof setInterval> | undefined
+let leaseReleaseTimer: ReturnType<typeof setTimeout> | undefined
+let leaseReleaseInFlight: Promise<void> | null = null
+let editorWarmupTimer: number | undefined
+let editorWarmupUsesIdle = false
 let remoteRefreshTimer: ReturnType<typeof setTimeout> | undefined
 let offMemo: (() => void) | undefined
+let leaveFlush: Promise<void> | null = null
 
 const tagOptions = computed(() => tags.value.map((tag) => tag.name))
 const editingActive = computed(() =>
@@ -109,6 +122,59 @@ function stopLeaseHeartbeat() {
   }
 }
 
+function cancelLeaseRelease() {
+  if (leaseReleaseTimer !== undefined) {
+    clearTimeout(leaseReleaseTimer)
+    leaseReleaseTimer = undefined
+  }
+}
+
+function scheduleLeaseRelease() {
+  cancelLeaseRelease()
+  if (!detail.value?.editLease.heldByMe) return
+  leaseReleaseTimer = setTimeout(async () => {
+    leaseReleaseTimer = undefined
+    if (currentModeIs('edit') || conflictVisible.value) return
+    await saveQueue
+    if (currentModeIs('edit') || conflictVisible.value
+      || dirty.value || saveState.value === 'error') return
+    await releaseLease()
+  }, EDIT_LEASE_RELEASE_DELAY_MS)
+}
+
+function currentModeIs(value: NoteViewMode) {
+  return mode.value === value
+}
+
+function scheduleEditorWarmup() {
+  if (editorAlive.value || editorWarmupTimer !== undefined
+    || conflictVisible.value || !detail.value) return
+  const warm = () => {
+    editorWarmupTimer = undefined
+    if (detail.value && !conflictVisible.value) {
+      editorAlive.value = true
+    }
+  }
+  // 阅读时不创建编辑器会拖慢第一次切换，但不能在首屏或用户操作时抢占主线程。
+  if (typeof window.requestIdleCallback === 'function') {
+    editorWarmupUsesIdle = true
+    editorWarmupTimer = window.requestIdleCallback(warm, { timeout: 2_500 })
+  } else {
+    editorWarmupUsesIdle = false
+    editorWarmupTimer = window.setTimeout(warm, 900)
+  }
+}
+
+function cancelEditorWarmup() {
+  if (editorWarmupTimer === undefined) return
+  if (editorWarmupUsesIdle && typeof window.cancelIdleCallback === 'function') {
+    window.cancelIdleCallback(editorWarmupTimer)
+  } else {
+    window.clearTimeout(editorWarmupTimer)
+  }
+  editorWarmupTimer = undefined
+}
+
 function syncLeaseHeartbeat() {
   stopLeaseHeartbeat()
   if (mode.value !== 'edit' || !detail.value?.editLease.heldByMe || conflictVisible.value) return
@@ -116,6 +182,7 @@ function syncLeaseHeartbeat() {
 }
 
 async function enterEditMode() {
+  cancelEditorWarmup()
   mode.value = 'edit'
   setMode('edit')
   editorAlive.value = true
@@ -135,14 +202,16 @@ async function setViewMode(next: NoteViewMode) {
 
   if (next === 'read') {
     scheduleSave.cancel()
-    if (dirty.value && !conflictVisible.value) await save()
-    if (conflictVisible.value || saveState.value === 'error') return
-    await releaseLease()
+    // 视觉状态立即切换；保存和释放编辑权放在后台，不能阻塞按钮反馈。
     setMode('read')
     await leaveEditModeLocally()
+    if (dirty.value && !conflictVisible.value) void save()
+    scheduleLeaseRelease()
     return
   }
 
+  cancelLeaseRelease()
+  if (leaseReleaseInFlight) await leaseReleaseInFlight
   if (detail.value?.editLease.heldByMe) {
     await enterEditMode()
     return
@@ -152,7 +221,19 @@ async function setViewMode(next: NoteViewMode) {
   try {
     const data = normalizeDetail(await memoApi.acquireEdit(noteId.value))
     notesCache.rememberDetail(data)
-    await applyDetail(data)
+    if (detail.value?.version !== data.version) {
+      await applyDetail(data)
+    } else if (detail.value) {
+      detail.value = {
+        ...detail.value,
+        version: data.version,
+        editLease: data.editLease,
+        files: data.files,
+        updatedAt: data.updatedAt,
+      }
+    } else {
+      await applyDetail(data)
+    }
     await enterEditMode()
   } catch (error) {
     if (error instanceof ApiError && error.status === 409) {
@@ -184,14 +265,9 @@ onMounted(async () => {
   }
   offMemo = onRealtime('memo', onMemoEvent)
 
-  // 刚从列表页点进来时详情还在内存里：先画出来，接口结果随后对齐。
-  const cached = notesCache.detailOf(noteId.value)
-  if (cached) {
-    loading.value = false
-    await applyDetail(normalizeDetail(cached))
-  }
   await Promise.all([loadDetail(), refreshTags()])
   window.addEventListener('keydown', onKeydown)
+  scheduleEditorWarmup()
   await nextTick()
   if (mode.value === 'edit' && detail.value?.editLease.heldByMe) {
     titleRef.value?.focus()
@@ -204,23 +280,45 @@ onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKeydown)
   offMemo?.()
   stopLeaseHeartbeat()
+  cancelLeaseRelease()
+  cancelEditorWarmup()
   clearTimeout(remoteRefreshTimer)
   scheduleSave.cancel()
-  void releaseLease()
+  if (!leaveFlush) {
+    void flushBeforeUnmount()
+  }
 })
 
-onBeforeRouteLeave(async () => {
+onBeforeRouteLeave(() => {
   scheduleSave.cancel()
-  if (dirty.value && !conflictVisible.value) await save()
-  if (conflictVisible.value || (dirty.value && saveState.value === 'error')) {
-    ElMessage.warning(conflictVisible.value
-      ? '请先加载最新版本或把当前草稿另存为新笔记'
-      : '当前草稿尚未保存，请检查网络后重试')
+  cancelLeaseRelease()
+  if (conflictVisible.value) {
+    ElMessage.warning('请先加载最新版本或把当前草稿另存为新笔记')
     return false
   }
-  await releaseLease()
+  // 导航立即完成；保存和释放编辑权在同一后台序列里执行，避免两个网络往返卡住切页。
+  leaveFlush = flushBeforeUnmount()
   return true
 })
+
+function flushBeforeUnmount() {
+  return (async () => {
+    if (dirty.value) {
+      await save()
+    } else {
+      await saveQueue
+    }
+    if (saveState.value === 'error') {
+      ElMessage.error('离开前的内容保存失败，请回到笔记重试')
+      return
+    }
+    if (!conflictVisible.value) {
+      await releaseLease()
+    }
+  })().finally(() => {
+    leaveFlush = null
+  })
+}
 
 function onKeydown(event: KeyboardEvent) {
   if (mode.value !== 'edit' || conflictVisible.value) return
@@ -257,6 +355,7 @@ async function applyDetail(data: MemoDetail) {
   await nextTick()
   applyingRemote = false
   syncLeaseHeartbeat()
+  scheduleEditorWarmup()
 }
 
 function tagSignature(names: string[]) {
@@ -265,7 +364,24 @@ function tagSignature(names: string[]) {
 
 async function loadDetail() {
   try {
-    let data = normalizeDetail(await memoApi.get(noteId.value))
+    let data: MemoDetail
+    try {
+      data = normalizeDetail(await requestNoteDetail(
+        noteId.value,
+        Boolean(initialDetail),
+      ))
+    } catch (error) {
+      const recoverable = !(error instanceof ApiError)
+        || error.status === undefined
+        || error.status === 0
+        || error.status >= 500
+      if (initialDetail && recoverable) {
+        // 已有完整缓存时，后台校准失败就保留当前画面，下次操作或 SSE 再同步。
+        scheduleEditorWarmup()
+        return
+      }
+      throw error
+    }
     let blockedByOther = false
 
     // 上一次选择编辑，只是表达“打开后想编辑”；真正能不能编辑由服务端租约决定。
@@ -366,7 +482,16 @@ async function renewLease() {
   }
 }
 
-async function releaseLease() {
+function releaseLease() {
+  if (leaseReleaseInFlight) return leaseReleaseInFlight
+  cancelLeaseRelease()
+  leaseReleaseInFlight = persistLeaseRelease().finally(() => {
+    leaseReleaseInFlight = null
+  })
+  return leaseReleaseInFlight
+}
+
+async function persistLeaseRelease() {
   const target = detail.value
   if (!target?.editLease.heldByMe) return
   stopLeaseHeartbeat()

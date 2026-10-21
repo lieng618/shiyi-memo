@@ -52,14 +52,12 @@ let offMail: (() => void) | undefined
 onMounted(() => {
   void refreshUnread()
   void refreshFriendSummary()
-  void loadFriendNotifications()
-  void loadUnreadMessages()
   offChat = onRealtime('chat', () => {
     void refreshFriendSummary()
-    void loadFriendNotifications(true)
+    if (friendPreviewOpen.value) void loadFriendNotifications(true)
   })
   offFriends = onRealtime('friends', () => {
-    void loadFriendNotifications(true)
+    if (friendPreviewOpen.value) void loadFriendNotifications(true)
   })
   // 新站内信（以及别的标签页里的已读）由服务端推过来，不再靠轮询发现
   offMail = onRealtime('mail', () => {

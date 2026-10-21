@@ -45,16 +45,21 @@ export const appApi = {
 }
 
 export const memoApi = {
-  list: (params: { keyword?: string; tagIds?: number[]; pinned?: boolean; page?: number; size?: number }) =>
+  list: (
+    params: { keyword?: string; tagIds?: number[]; pinned?: boolean; page?: number; size?: number },
+    options: { silent?: boolean } = {},
+  ) =>
     http
       .get<PageResult<MemoSummary>>('/memos', {
         params,
+        silent: options.silent,
         paramsSerializer: {
           indexes: null,
         },
       })
       .then((r) => r.data),
-  get: (id: number) => http.get<MemoDetail>(`/memos/${id}`).then((r) => r.data),
+  get: (id: number, options: { silent?: boolean } = {}) =>
+    http.get<MemoDetail>(`/memos/${id}`, { silent: options.silent }).then((r) => r.data),
   create: (payload: { title?: string; contentHtml?: string; tagNames?: string[]; pinned?: boolean }) =>
     http.post<MemoDetail>('/memos', payload).then((r) => r.data),
   update: (id: number, payload: {

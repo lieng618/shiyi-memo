@@ -20,6 +20,11 @@ import { formatTime } from '@/utils/format'
 import { copyText } from '@/utils/clipboard'
 import { useNotesFilter } from '@/composables/useNotesFilter'
 import { useNotesCache } from '@/composables/useNotesCache'
+import {
+  pauseNotePrefetch,
+  prefetchNoteDetail,
+  startNotePrefetch,
+} from '@/composables/useNotePrefetch'
 import { useTagsCache } from '@/composables/useTagsCache'
 import { prefetchNoteEditor, useCreateNote } from '@/composables/useCreateNote'
 
@@ -50,12 +55,15 @@ const shareNote = ref<MemoSummary | null>(null)
 const shareUrl = ref('')
 const shareLoading = ref(false)
 const shareEnabled = ref(false)
+let prefetchTimer: ReturnType<typeof setTimeout> | undefined
+let prefetchAllowed = false
 const filtered = computed(() => hasFilter())
 const hasMore = computed(() => notes.value.length < total.value)
 
 watch([keyword, activeTagIds], () => void load(), { deep: true })
 
 onMounted(() => {
+  prefetchAllowed = true
   loadTags()
   // 列表页整体跟着窗口滚：位置记在缓存里，回来时由路由的 scrollBehavior 落回原处
   window.addEventListener('scroll', rememberScroll, { passive: true })
@@ -63,20 +71,33 @@ onMounted(() => {
   if (notesCache.matches(key)) {
     // 上次的列表还在内存里：先原样画出来，再静默对齐服务端
     loading.value = false
-    void refreshQuiet()
+    void refreshQuiet().finally(scheduleDetailPrefetch)
   } else {
-    void load()
+    void load().catch(() => {}).finally(scheduleDetailPrefetch)
   }
 })
 
 onBeforeUnmount(() => {
+  prefetchAllowed = false
+  clearTimeout(prefetchTimer)
+  pauseNotePrefetch()
   window.removeEventListener('scroll', rememberScroll)
 })
 
 /** 离开列表页就停止记录：下一页自己滚到顶部，别把那个位置记成列表的位置 */
 onBeforeRouteLeave(() => {
+  prefetchAllowed = false
+  clearTimeout(prefetchTimer)
+  pauseNotePrefetch()
   window.removeEventListener('scroll', rememberScroll)
 })
+
+function scheduleDetailPrefetch() {
+  clearTimeout(prefetchTimer)
+  if (!prefetchAllowed) return
+  prefetchNoteEditor()
+  prefetchTimer = setTimeout(() => void startNotePrefetch(), 300)
+}
 
 function rememberScroll() {
   notesCache.setScrollTop(window.scrollY)
@@ -91,13 +112,13 @@ function loadTags() {
   void loadTagsFromCache().catch(() => {})
 }
 
-function fetchNotes(page: number, size: number) {
+function fetchNotes(page: number, size: number, silent = false) {
   return memoApi.list({
     keyword: keyword.value.trim() || undefined,
     tagIds: activeTagIds.value.length ? activeTagIds.value : undefined,
     page,
     size,
-  })
+  }, { silent })
 }
 
 /** 首次进入或切换筛选条件：只有这里才显示骨架屏 */
@@ -120,7 +141,7 @@ async function refreshQuiet() {
   const key = currentKey()
   const size = Math.min(MAX_PAGE_SIZE, Math.max(PAGE_SIZE, notes.value.length))
   try {
-    const result = await fetchNotes(1, size)
+    const result = await fetchNotes(1, size, true)
     if (key !== currentKey()) {
       // 请求期间换了筛选条件，这批结果已经过期，丢掉
       return
@@ -217,6 +238,11 @@ function clearFilters() {
 
 async function openNote(id: number) {
   await router.push(`/notes/${id}`)
+}
+
+function onPrefetchNote(id: number) {
+  prefetchNoteEditor()
+  void prefetchNoteDetail(id)
 }
 
 async function openShare(note: MemoSummary) {
@@ -328,19 +354,21 @@ async function toggleShare(value: string | number | boolean) {
             :style="{ animationDelay: `${Math.min(index, 10) * 30}ms` }"
           >
             <article class="note-row">
-              <!-- 悬停某条笔记就预取编辑页：点开时内容已经就位 -->
+              <!-- 悬停某条笔记就同时预取编辑页代码和详情：点开时内容已经就位 -->
               <button
                 type="button"
                 class="note-main"
                 @click="openNote(note.id)"
-                @mouseenter="prefetchNoteEditor"
+                @mouseenter="onPrefetchNote(note.id)"
+                @focus="onPrefetchNote(note.id)"
               >
                 <img
                   v-if="note.coverUrl"
                   class="note-cover"
                   :src="note.coverUrl"
-                  alt=""
                   loading="lazy"
+                  decoding="async"
+                  alt=""
                   width="104"
                   height="78"
                 />
