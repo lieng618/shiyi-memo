@@ -1,5 +1,6 @@
 import axios, { type AxiosError } from 'axios'
 import { ElMessage } from 'element-plus'
+import { getEditClientLabel, getEditSessionId } from '@/composables/useEditSession'
 
 declare module 'axios' {
   interface AxiosRequestConfig {
@@ -13,6 +14,13 @@ export const http = axios.create({
   baseURL: '/api',
   timeout: 30_000,
   withCredentials: true,
+})
+
+http.interceptors.request.use((config) => {
+  config.headers['X-Edit-Session'] = getEditSessionId()
+  // HTTP 头只允许单字节字符，设备名称里的中文先做 URL 编码。
+  config.headers['X-Edit-Client'] = encodeURIComponent(getEditClientLabel())
+  return config
 })
 
 /** 401 时通知外部跳登录页，避免在拦截器里直接依赖 router 造成循环引用 */

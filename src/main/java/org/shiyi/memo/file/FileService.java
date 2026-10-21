@@ -37,9 +37,11 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.HexFormat;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Matcher;
@@ -54,6 +56,8 @@ public class FileService {
     private static final long IMAGE_SIZE_PROBE_LIMIT = 40L * 1024 * 1024;
     private static final Pattern FILE_REFERENCE = Pattern.compile(
             "(?:/api/files/|/api/public/memos/[^/\\s]+/files/)(\\d+)(?:/|\\b)");
+    private static final Pattern FILE_REFERENCE_REWRITE = Pattern.compile(
+            "((?:/api/files/|/api/public/memos/[^/\\s]+/files/))(\\d+)(?=/|\\b)");
 
     private final FileAssetMapper fileMapper;
     private final MemoMapper memoMapper;
@@ -426,6 +430,80 @@ public class FileService {
         assets.stream()
                 .filter(asset -> !referencedIds.contains(asset.getId()))
                 .forEach(this::removeAsset);
+    }
+
+    /**
+     * 冲突草稿另存时，把正文引用的附件复制成目标笔记自己的元数据。
+     * 物理文件仍按 storage_path 共用；任一条目删除时，removeAsset 会检查其他引用。
+     */
+    @Transactional
+    public String cloneReferencedFiles(long userId, long targetMemoId, String contentHtml) {
+        Set<Long> sourceIds = referencedFileIds(contentHtml);
+        if (sourceIds.isEmpty()) {
+            return contentHtml == null ? "" : contentHtml;
+        }
+
+        List<FileAsset> sources = fileMapper.selectList(Wrappers.lambdaQuery(FileAsset.class)
+                .eq(FileAsset::getUserId, userId)
+                .in(FileAsset::getId, sourceIds));
+        if (sources.isEmpty()) {
+            return contentHtml;
+        }
+
+        long copySize = sources.stream().mapToLong(asset -> asset.getSize() == null ? 0 : asset.getSize()).sum();
+        AppUser user = userService.requireEnabled(userId);
+        UserLevel level = userService.levelOf(user);
+        long used = user.getStorageUsed() == null ? 0 : user.getStorageUsed();
+        if (used + copySize > level.getMaxStorage()) {
+            throw new ApiException(413, "剩余空间不足，无法另存包含附件的冲突副本");
+        }
+
+        Map<Long, Long> idMap = new HashMap<>();
+        long addedSize = 0;
+        for (FileAsset source : sources) {
+            FileAsset copy = new FileAsset();
+            copy.setUserId(userId);
+            copy.setMemoId(targetMemoId);
+            copy.setOriginalName(source.getOriginalName());
+            copy.setExt(source.getExt());
+            copy.setMime(source.getMime());
+            copy.setSize(source.getSize());
+            copy.setKind(source.getKind());
+            copy.setWidth(source.getWidth());
+            copy.setHeight(source.getHeight());
+            copy.setStoragePath(source.getStoragePath());
+            copy.setContentHash(source.getContentHash());
+            copy.setBlocked(source.getBlocked());
+            copy.setBlockedReason(source.getBlockedReason());
+            copy.setBlockedAt(source.getBlockedAt());
+            fileMapper.insert(copy);
+            idMap.put(source.getId(), copy.getId());
+            if (source.getSize() != null) {
+                addedSize += source.getSize();
+            }
+        }
+        if (addedSize > 0) {
+            userService.addStorageUsed(userId, addedSize);
+        }
+
+        Matcher matcher = FILE_REFERENCE_REWRITE.matcher(contentHtml);
+        StringBuilder rewritten = new StringBuilder();
+        while (matcher.find()) {
+            long oldId;
+            try {
+                oldId = Long.parseLong(matcher.group(2));
+            } catch (NumberFormatException ex) {
+                continue;
+            }
+            Long newId = idMap.get(oldId);
+            if (newId == null) {
+                continue;
+            }
+            matcher.appendReplacement(rewritten, Matcher.quoteReplacement(
+                    matcher.group(1) + newId));
+        }
+        matcher.appendTail(rewritten);
+        return rewritten.toString();
     }
 
     static Set<Long> referencedFileIds(String contentHtml) {

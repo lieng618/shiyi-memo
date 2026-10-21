@@ -74,8 +74,16 @@ export interface MemoDetail {
   shareToken?: string | null
   tags: Tag[]
   files: FileAsset[]
+  version: number
+  editLease: EditLeaseInfo
   createdAt: string
   updatedAt: string
+}
+
+export interface EditLeaseInfo {
+  heldByMe: boolean
+  holderLabel?: string | null
+  expiresAt?: string | null
 }
 
 export interface PublicMemoDetail {

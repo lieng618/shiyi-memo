@@ -57,8 +57,25 @@ export const memoApi = {
   get: (id: number) => http.get<MemoDetail>(`/memos/${id}`).then((r) => r.data),
   create: (payload: { title?: string; contentHtml?: string; tagNames?: string[]; pinned?: boolean }) =>
     http.post<MemoDetail>('/memos', payload).then((r) => r.data),
-  update: (id: number, payload: { title?: string; contentHtml?: string; tagNames?: string[]; pinned?: boolean }) =>
-    http.put<MemoDetail>(`/memos/${id}`, payload).then((r) => r.data),
+  update: (id: number, payload: {
+    title?: string
+    contentHtml?: string
+    tagNames?: string[]
+    pinned?: boolean
+    expectedVersion: number
+  }) =>
+    http.put<MemoDetail>(`/memos/${id}`, payload, { silent: true }).then((r) => r.data),
+  acquireEdit: (id: number) =>
+    http.post<MemoDetail>(`/memos/${id}/edit`, undefined, { silent: true }).then((r) => r.data),
+  releaseEdit: (id: number) =>
+    http.delete(`/memos/${id}/edit`, { silent: true }).then(() => undefined),
+  copyConflict: (id: number, payload: {
+    title?: string
+    contentHtml?: string
+    tagNames?: string[]
+    expectedVersion?: number
+  }) =>
+    http.post<MemoDetail>(`/memos/${id}/copy`, payload, { silent: true }).then((r) => r.data),
   pin: (id: number, pinned: boolean) => http.post(`/memos/${id}/pin`, { pinned }).then(() => undefined),
   share: (id: number, enabled = true) =>
     http.post<ShareResponse>(`/memos/${id}/share`, { enabled }).then((r) => r.data),

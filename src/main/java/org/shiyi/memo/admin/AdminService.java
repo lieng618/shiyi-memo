@@ -18,11 +18,13 @@ import org.shiyi.memo.file.mapper.FileAssetMapper;
 import org.shiyi.memo.memo.MemoService;
 import org.shiyi.memo.memo.MemoSearch;
 import org.shiyi.memo.memo.entity.Memo;
+import org.shiyi.memo.memo.mapper.MemoEditLeaseMapper;
 import org.shiyi.memo.memo.mapper.MemoMapper;
 import org.shiyi.memo.message.MessageService;
 import org.shiyi.memo.message.WelcomeLetterService;
 import org.shiyi.memo.message.entity.UserMessage;
 import org.shiyi.memo.message.mapper.UserMessageMapper;
+import org.shiyi.memo.realtime.RealtimeEventService;
 import org.shiyi.memo.tag.mapper.TagMapper;
 import org.shiyi.memo.user.UserService;
 import org.shiyi.memo.user.dto.UserDtos;
@@ -60,6 +62,7 @@ public class AdminService {
     private final AppUserMapper userMapper;
     private final UserLevelMapper levelMapper;
     private final MemoMapper memoMapper;
+    private final MemoEditLeaseMapper memoEditLeaseMapper;
     private final FileAssetMapper fileMapper;
     private final UserMessageMapper messageMapper;
     private final TagMapper tagMapper;
@@ -68,6 +71,7 @@ public class AdminService {
     private final FileService fileService;
     private final MessageService messageService;
     private final WelcomeLetterService welcomeLetterService;
+    private final RealtimeEventService realtimeEventService;
 
     // ---------------- 概览 ----------------
 
@@ -290,7 +294,10 @@ public class AdminService {
         String title = memo.getTitle() == null || memo.getTitle().isBlank() ? "无标题" : memo.getTitle();
         fileService.deleteByMemo(memo.getUserId(), memoId);
         tagMapper.unlinkAll(memoId);
+        memoEditLeaseMapper.deleteById(memoId);
         memoMapper.deleteById(memoId);
+        realtimeEventService.sendAfterCommit(memo.getUserId(), "memo",
+                Map.of("event", "delete", "memoId", memoId));
         messageService.send(memo.getUserId(), "你的笔记已被删除",
                 "笔记「" + title + "」因违反站点规定已被管理员删除。"
                         + (StringUtils.hasText(reason) ? "\n\n说明：" + reason : ""),

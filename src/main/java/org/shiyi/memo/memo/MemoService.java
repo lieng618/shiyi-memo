@@ -13,7 +13,10 @@ import org.shiyi.memo.file.dto.FileDtos;
 import org.shiyi.memo.file.mapper.FileAssetMapper;
 import org.shiyi.memo.memo.dto.MemoDtos;
 import org.shiyi.memo.memo.entity.Memo;
+import org.shiyi.memo.memo.entity.MemoEditLease;
+import org.shiyi.memo.memo.mapper.MemoEditLeaseMapper;
 import org.shiyi.memo.memo.mapper.MemoMapper;
+import org.shiyi.memo.realtime.RealtimeEventService;
 import org.shiyi.memo.security.AuthContext;
 import org.shiyi.memo.security.AuthUser;
 import org.shiyi.memo.tag.TagService;
@@ -43,13 +46,18 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class MemoService {
 
+    /** 90 秒没有续租就允许其他设备接管，前端每 20 秒续租一次。 */
+    private static final long EDIT_LEASE_SECONDS = 90;
+
     private final MemoMapper memoMapper;
+    private final MemoEditLeaseMapper editLeaseMapper;
     private final TagMapper tagMapper;
     private final FileAssetMapper fileMapper;
     private final TagService tagService;
     private final FileService fileService;
     private final UserService userService;
     private final FriendService friendService;
+    private final RealtimeEventService realtimeEventService;
 
     public PageResult<MemoDtos.MemoSummary> list(long userId, String keyword, Collection<Long> tagIds,
                                                  Boolean pinned, long page, long size) {
@@ -90,33 +98,45 @@ public class MemoService {
         return PageResult.of(records, result.getTotal(), page, size);
     }
 
-    public MemoDtos.MemoDetail detail(long userId, long memoId) {
+    public MemoDtos.MemoDetail detail(long userId, long memoId, String sessionId) {
         Memo memo = requireOwned(userId, memoId);
         List<TagDtos.TagDto> tags = tagsOf(List.of(memoId), userId).getOrDefault(memoId, List.of());
         List<FileDtos.FileDto> files = fileService.listByMemo(userId, memoId);
         return new MemoDtos.MemoDetail(memo.getId(), memo.getTitle(), memo.getContentHtml(),
                 Boolean.TRUE.equals(memo.getPinned()), tags, files,
                 Boolean.TRUE.equals(memo.getShareEnabled()), memo.getShareToken(),
+                memo.getVersion() == null ? 0L : memo.getVersion(), leaseInfo(memoId, sessionId),
                 memo.getCreatedAt(), memo.getUpdatedAt());
     }
 
     @Transactional
-    public MemoDtos.MemoDetail create(long userId, MemoDtos.MemoRequest request) {
+    public MemoDtos.MemoDetail create(long userId, MemoDtos.MemoRequest request,
+                                      String sessionId, String clientLabel) {
+        String session = requireSession(sessionId);
         Memo memo = new Memo();
         memo.setUserId(userId);
         memo.setContentHtml(request.contentHtml() == null ? "" : request.contentHtml());
         memo.setTitle(resolveTitle(request.title(), memo.getContentHtml()));
         deriveSearchText(memo);
+        memo.setVersion(0L);
         boolean pinned = Boolean.TRUE.equals(request.pinned());
         memo.setPinned(pinned);
         memo.setPinnedAt(pinned ? LocalDateTime.now() : null);
         memoMapper.insert(memo);
         syncTags(userId, memo.getId(), request.tagNames());
-        return detail(userId, memo.getId());
+        insertLease(userId, memo.getId(), session, normalizeClientLabel(clientLabel));
+        realtimeEventService.sendAfterCommit(userId, "memo",
+                memoEvent("create", memo.getId(), memo.getVersion(), session));
+        return detail(userId, memo.getId(), session);
     }
 
     @Transactional
-    public MemoDtos.MemoDetail update(long userId, long memoId, MemoDtos.MemoRequest request) {
+    public MemoDtos.MemoDetail update(long userId, long memoId, MemoDtos.MemoRequest request,
+                                      String sessionId) {
+        String session = requireSession(sessionId);
+        if (request.expectedVersion() == null) {
+            throw ApiException.badRequest("缺少笔记版本号");
+        }
         Memo memo = requireOwned(userId, memoId);
         String content = request.contentHtml();
         Memo patch = new Memo();
@@ -131,14 +151,110 @@ public class MemoService {
             patch.setPinned(pinned);
             patch.setPinnedAt(pinned ? (memo.getPinnedAt() != null ? memo.getPinnedAt() : LocalDateTime.now()) : null);
         }
-        memoMapper.updateById(patch);
+        int updated = memoMapper.updateWithLease(patch, userId, request.expectedVersion(),
+                session, LocalDateTime.now());
+        if (updated == 0) {
+            MemoEditLease lease = editLeaseMapper.selectById(memoId);
+            if (!isLeaseActive(lease, LocalDateTime.now()) || !session.equals(lease.getSessionId())) {
+                throw ApiException.conflict("编辑权已失效，请先重新取得编辑权");
+            }
+            throw ApiException.conflict("笔记已在其他设备更新，请处理冲突后再保存");
+        }
         if (content != null) {
             fileService.deleteUnreferenced(userId, memoId, content);
         }
         if (request.tagNames() != null) {
             syncTags(userId, memo.getId(), request.tagNames());
         }
-        return detail(userId, memoId);
+        MemoDtos.MemoDetail result = detail(userId, memoId, session);
+        realtimeEventService.sendAfterCommit(userId, "memo",
+                memoEvent("update", memoId, result.version(), session));
+        return result;
+    }
+
+    /**
+     * 申请或续租编辑权。先锁 memo 行，保证两个设备同时点击编辑时只有一个成功。
+     */
+    @Transactional
+    public MemoDtos.MemoDetail acquireEdit(long userId, long memoId,
+                                           String sessionId, String clientLabel) {
+        String session = requireSession(sessionId);
+        if (memoMapper.lockOwned(userId, memoId) == null) {
+            throw ApiException.notFound("记录不存在或已删除");
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        MemoEditLease lease = editLeaseMapper.selectById(memoId);
+        boolean changedHolder = !isLeaseActive(lease, now)
+                || !session.equals(lease.getSessionId());
+        if (!changedHolder) {
+            editLeaseMapper.updateById(leasePatch(memoId, session,
+                    normalizeClientLabel(clientLabel), now));
+            return detail(userId, memoId, session);
+        }
+
+        if (isLeaseActive(lease, now)) {
+            throw ApiException.conflict(normalizeClientLabel(lease.getClientLabel()) + " 正在编辑这篇笔记");
+        }
+
+        upsertLease(userId, memoId, lease, session,
+                normalizeClientLabel(clientLabel), now);
+        MemoDtos.MemoDetail result = detail(userId, memoId, session);
+        realtimeEventService.sendAfterCommit(userId, "memo",
+                memoEvent("lease", memoId, result.version(), session));
+        return result;
+    }
+
+    @Transactional
+    public void releaseEdit(long userId, long memoId, String sessionId) {
+        String session = requireSession(sessionId);
+        if (memoMapper.lockOwned(userId, memoId) == null) {
+            return;
+        }
+        MemoEditLease lease = editLeaseMapper.selectById(memoId);
+        if (lease == null || !session.equals(lease.getSessionId())) {
+            return;
+        }
+        editLeaseMapper.deleteById(memoId);
+        realtimeEventService.sendAfterCommit(userId, "memo",
+                memoEvent("lease", memoId, null, session));
+    }
+
+    /**
+     * 冲突草稿另存为新笔记。正文引用的附件也会复制成新笔记自己的附件，
+     * 避免原笔记随后清理附件时把副本弄坏。
+     */
+    @Transactional
+    public MemoDtos.MemoDetail copyConflict(long userId, long sourceMemoId,
+                                            MemoDtos.MemoRequest request,
+                                            String sessionId, String clientLabel) {
+        String session = requireSession(sessionId);
+        Memo source = requireOwned(userId, sourceMemoId);
+        String content = request.contentHtml() == null ? source.getContentHtml() : request.contentHtml();
+
+        Memo copy = new Memo();
+        copy.setUserId(userId);
+        copy.setContentHtml(content == null ? "" : content);
+        copy.setTitle(conflictCopyTitle(resolveTitle(request.title(), copy.getContentHtml())));
+        deriveSearchText(copy);
+        copy.setVersion(0L);
+        copy.setPinned(false);
+        copy.setPinnedAt(null);
+        memoMapper.insert(copy);
+
+        String clonedContent = fileService.cloneReferencedFiles(userId, copy.getId(), copy.getContentHtml());
+        if (!clonedContent.equals(copy.getContentHtml())) {
+            Memo patch = new Memo();
+            patch.setId(copy.getId());
+            patch.setContentHtml(clonedContent);
+            deriveSearchText(patch);
+            memoMapper.updateById(patch);
+        }
+        syncTags(userId, copy.getId(), request.tagNames());
+        insertLease(userId, copy.getId(), session, normalizeClientLabel(clientLabel));
+        realtimeEventService.sendAfterCommit(userId, "memo",
+                memoEvent("create", copy.getId(), 0L, session));
+        return detail(userId, copy.getId(), session);
     }
 
     @Transactional
@@ -149,6 +265,8 @@ public class MemoService {
         patch.setPinned(pinned);
         patch.setPinnedAt(pinned ? LocalDateTime.now() : null);
         memoMapper.updateById(patch);
+        realtimeEventService.sendAfterCommit(userId, "memo",
+                memoEvent("update", memoId, memo.getVersion(), null));
     }
 
     @Transactional
@@ -167,6 +285,8 @@ public class MemoService {
             patch.setSharedAt(LocalDateTime.now());
         }
         memoMapper.updateById(patch);
+        realtimeEventService.sendAfterCommit(userId, "memo",
+                memoEvent("update", memoId, memo.getVersion(), null));
         return new MemoDtos.ShareResponse(enabled, token);
     }
 
@@ -216,7 +336,10 @@ public class MemoService {
         Memo memo = requireOwned(userId, memoId);
         fileService.deleteByMemo(userId, memoId);
         tagMapper.unlinkAll(memo.getId());
+        editLeaseMapper.deleteById(memo.getId());
         memoMapper.deleteById(memo.getId());
+        realtimeEventService.sendAfterCommit(userId, "memo",
+                memoEvent("delete", memoId, null, null));
     }
 
     public Memo requireOwned(long userId, long memoId) {
@@ -225,6 +348,102 @@ public class MemoService {
             throw ApiException.notFound("记录不存在或已删除");
         }
         return memo;
+    }
+
+    private void insertLease(long userId, long memoId, String sessionId, String clientLabel) {
+        LocalDateTime now = LocalDateTime.now();
+        MemoEditLease lease = new MemoEditLease();
+        lease.setMemoId(memoId);
+        lease.setUserId(userId);
+        lease.setSessionId(sessionId);
+        lease.setClientLabel(clientLabel);
+        lease.setAcquiredAt(now);
+        lease.setExpiresAt(now.plusSeconds(EDIT_LEASE_SECONDS));
+        editLeaseMapper.insert(lease);
+    }
+
+    private void upsertLease(long userId, long memoId, MemoEditLease existing,
+                             String sessionId, String clientLabel, LocalDateTime now) {
+        if (existing == null) {
+            insertLease(userId, memoId, sessionId, clientLabel);
+            return;
+        }
+        MemoEditLease patch = leasePatch(memoId, sessionId, clientLabel, now);
+        patch.setUserId(userId);
+        patch.setAcquiredAt(now);
+        editLeaseMapper.updateById(patch);
+    }
+
+    private static MemoEditLease leasePatch(long memoId, String sessionId,
+                                            String clientLabel, LocalDateTime now) {
+        MemoEditLease patch = new MemoEditLease();
+        patch.setMemoId(memoId);
+        patch.setSessionId(sessionId);
+        patch.setClientLabel(clientLabel);
+        patch.setExpiresAt(now.plusSeconds(EDIT_LEASE_SECONDS));
+        return patch;
+    }
+
+    private MemoDtos.EditLeaseInfo leaseInfo(long memoId, String sessionId) {
+        MemoEditLease lease = editLeaseMapper.selectById(memoId);
+        if (!isLeaseActive(lease, LocalDateTime.now())) {
+            return new MemoDtos.EditLeaseInfo(false, null, null);
+        }
+        String holderLabel = normalizeClientLabel(lease.getClientLabel());
+        return new MemoDtos.EditLeaseInfo(
+                StringUtils.hasText(sessionId) && sessionId.equals(lease.getSessionId()),
+                holderLabel, lease.getExpiresAt());
+    }
+
+    private static boolean isLeaseActive(MemoEditLease lease, LocalDateTime now) {
+        return lease != null && lease.getExpiresAt() != null && lease.getExpiresAt().isAfter(now);
+    }
+
+    private static String requireSession(String sessionId) {
+        if (!StringUtils.hasText(sessionId)
+                || sessionId.length() < 16
+                || sessionId.length() > 64
+                || !sessionId.matches("[A-Za-z0-9_-]+")) {
+            throw ApiException.badRequest("缺少有效的编辑会话标识");
+        }
+        return sessionId;
+    }
+
+    private static String normalizeClientLabel(String label) {
+        if (!StringUtils.hasText(label)) {
+            return "其他设备";
+        }
+        String decoded;
+        try {
+            decoded = UriUtils.decode(label, StandardCharsets.UTF_8);
+        } catch (IllegalArgumentException ex) {
+            return "其他设备";
+        }
+        String clean = decoded.replaceAll("[\\p{Cntrl}]", "").trim();
+        if (clean.isEmpty()) {
+            return "其他设备";
+        }
+        return clean.length() > 128 ? clean.substring(0, 128) : clean;
+    }
+
+    private static String conflictCopyTitle(String title) {
+        String suffix = "（冲突副本）";
+        String clean = StringUtils.hasText(title) ? title.trim() : "无标题";
+        int maxBase = 255 - suffix.length();
+        if (clean.length() > maxBase) {
+            clean = clean.substring(0, maxBase);
+        }
+        return clean + suffix;
+    }
+
+    private static Map<String, Object> memoEvent(String event, long memoId,
+                                                 Long version, String sessionId) {
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("event", event);
+        payload.put("memoId", memoId);
+        payload.put("version", version);
+        payload.put("sessionId", sessionId);
+        return payload;
     }
 
     private void syncTags(long userId, long memoId, Collection<String> tagNames) {

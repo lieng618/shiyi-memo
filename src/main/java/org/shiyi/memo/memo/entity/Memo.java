@@ -18,6 +18,8 @@ public class Memo {
     private String title;
     /** 富文本 HTML（wangEditor） */
     private String contentHtml;
+    /** 正文保存版本，用于跨设备乐观锁 */
+    private Long version;
     /** 去标签后的纯文本，搜索和摘要都读它 */
     private String contentText;
     /** 列表摘要，写入时算好，列表页直接用 */

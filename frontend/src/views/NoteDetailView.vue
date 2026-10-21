@@ -1,14 +1,22 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import { ArrowLeft, EditPen, Reading } from '@element-plus/icons-vue'
 import { memoApi } from '@/api'
+import { ApiError } from '@/api/http'
 import type { MemoDetail } from '@/types'
 import { formatFull } from '@/utils/format'
 import { debounce } from '@/composables/useDebounce'
 import { useNotesCache } from '@/composables/useNotesCache'
 import { useTagsCache } from '@/composables/useTagsCache'
-import { useNoteViewMode, type NoteViewMode } from '@/composables/useNoteViewMode'
+import {
+  forceNoteViewMode,
+  useNoteViewMode,
+  type NoteViewMode,
+} from '@/composables/useNoteViewMode'
+import { getEditSessionId } from '@/composables/useEditSession'
+import { onRealtime } from '@/composables/useRealtime'
 import { exportNote, type ExportFormat } from '@/utils/noteExport'
 import MarkdownView from '@/components/MarkdownView.vue'
 import RichEditor, { exportTriggerStore } from '@/components/RichEditor.vue'
@@ -16,10 +24,19 @@ import RichEditor, { exportTriggerStore } from '@/components/RichEditor.vue'
 /** 外壳自动更新重启前会调这个，把防抖里还没发出去的编辑先落库 */
 const flushBridge = globalThis as unknown as { __shiyiFlushEdits?: (() => Promise<void>) | null }
 
+interface MemoRealtimeEvent {
+  event?: 'create' | 'update' | 'lease' | 'delete'
+  memoId?: number
+  version?: number | null
+  sessionId?: string | null
+}
+
+const EDIT_LEASE_HEARTBEAT_MS = 20_000
 const route = useRoute()
 const router = useRouter()
 const notesCache = useNotesCache()
 const { tags, load: loadTagsFromCache, invalidate: invalidateTags } = useTagsCache()
+const editSessionId = getEditSessionId()
 
 const noteId = computed(() => Number(route.params.id))
 const detail = ref<MemoDetail | null>(null)
@@ -27,33 +44,47 @@ const loading = ref(true)
 const title = ref('')
 const contentHtml = ref('')
 const tagNames = ref<string[]>([])
-const saveState = ref<'idle' | 'saving' | 'saved' | 'error'>('idle')
+const saveState = ref<'idle' | 'saving' | 'saved' | 'error' | 'conflict'>('idle')
 const savedAt = ref<string | null>(null)
 const titleRef = ref<HTMLInputElement | null>(null)
 const editorRef = ref<InstanceType<typeof RichEditor> | null>(null)
 const dirty = ref(false)
 const exporting = ref(false)
-/** 阅读 / 编辑：默认沿用上次选过的那个，习惯只看的人不用每篇都切一遍 */
+const acquiring = ref(false)
+const conflictVisible = ref(false)
+const conflictLatest = ref<MemoDetail | null>(null)
+const savingCopy = ref(false)
+/** 阅读 / 编辑：默认沿用上次选过的那个，但最终还要由服务端租约决定。 */
 const { mode, setMode } = useNoteViewMode()
-/** 编辑器进过一次编辑态才创建，之后一直留着：来回切不丢撤销记录，也不用重建 */
-const editorAlive = ref(mode.value === 'edit')
+/** 编辑器进过一次编辑态才创建，之后一直留着：来回切不丢撤销记录，也不用重建。 */
+const editorAlive = ref(false)
 
 let applyingRemote = false
 let changeVersion = 0
 let savedVersion = 0
 let saveQueue: Promise<void> = Promise.resolve()
-/** 上一次和服务端一致的标签集合，用来判断保存后要不要重新拉标签 */
 let syncedTagNames = ''
+let leaseTimer: ReturnType<typeof setInterval> | undefined
+let remoteRefreshTimer: ReturnType<typeof setTimeout> | undefined
+let offMemo: (() => void) | undefined
 
 const tagOptions = computed(() => tags.value.map((tag) => tag.name))
+const editingActive = computed(() =>
+  mode.value === 'edit' && Boolean(detail.value?.editLease.heldByMe))
+const readOnlyLabel = computed(() => {
+  const lease = detail.value?.editLease
+  if (!lease || lease.heldByMe || !lease.holderLabel) return ''
+  return `${lease.holderLabel} 正在编辑`
+})
 const saveLabel = computed(() => {
+  if (saveState.value === 'conflict') return '版本冲突，等待处理'
   switch (saveState.value) {
     case 'saving':
       return '保存中…'
     case 'saved':
       return savedAt.value ? `已保存 · ${savedAt.value}` : '已保存'
     case 'error':
-      return '保存失败，稍后会重试'
+      return '保存失败，请重试'
     default:
       return ''
   }
@@ -63,24 +94,82 @@ function tagColorOf(name: string) {
   return tags.value.find((tag) => tag.name === name)?.color ?? 'var(--brand)'
 }
 
-/** 切到阅读态先把光标从编辑器里挪走，切回编辑态再把它交还给编辑器 */
-async function setViewMode(next: NoteViewMode) {
-  if (next === mode.value) return
-  if (next === 'read') {
-    editorRef.value?.getEditor()?.blur()
+function normalizeDetail(input: MemoDetail): MemoDetail {
+  return {
+    ...input,
+    version: input.version ?? 0,
+    editLease: input.editLease ?? { heldByMe: false },
   }
-  setMode(next)
-  if (next === 'edit') {
-    editorAlive.value = true
-    await nextTick()
-    editorRef.value?.focus()
+}
+
+function stopLeaseHeartbeat() {
+  if (leaseTimer !== undefined) {
+    clearInterval(leaseTimer)
+    leaseTimer = undefined
+  }
+}
+
+function syncLeaseHeartbeat() {
+  stopLeaseHeartbeat()
+  if (mode.value !== 'edit' || !detail.value?.editLease.heldByMe || conflictVisible.value) return
+  leaseTimer = setInterval(() => void renewLease(), EDIT_LEASE_HEARTBEAT_MS)
+}
+
+async function enterEditMode() {
+  mode.value = 'edit'
+  setMode('edit')
+  editorAlive.value = true
+  syncLeaseHeartbeat()
+  await nextTick()
+  editorRef.value?.focus()
+}
+
+async function leaveEditModeLocally() {
+  stopLeaseHeartbeat()
+  editorRef.value?.getEditor()?.blur()
+  mode.value = 'read'
+}
+
+async function setViewMode(next: NoteViewMode) {
+  if (next === mode.value || acquiring.value) return
+
+  if (next === 'read') {
+    scheduleSave.cancel()
+    if (dirty.value && !conflictVisible.value) await save()
+    if (conflictVisible.value || saveState.value === 'error') return
+    await releaseLease()
+    setMode('read')
+    await leaveEditModeLocally()
+    return
+  }
+
+  if (detail.value?.editLease.heldByMe) {
+    await enterEditMode()
+    return
+  }
+
+  acquiring.value = true
+  try {
+    const data = normalizeDetail(await memoApi.acquireEdit(noteId.value))
+    notesCache.rememberDetail(data)
+    await applyDetail(data)
+    await enterEditMode()
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 409) {
+      ElMessage.warning(error.message)
+      await refreshFromServer()
+    } else {
+      ElMessage.error('暂时无法取得编辑权，请稍后重试')
+    }
+  } finally {
+    acquiring.value = false
   }
 }
 
 const scheduleSave = debounce(() => void save(), 800)
 
 watch([title, contentHtml], () => {
-  if (detail.value && !applyingRemote) {
+  if (detail.value && !applyingRemote && mode.value === 'edit' && !conflictVisible.value) {
     changeVersion += 1
     dirty.value = true
     scheduleSave()
@@ -88,24 +177,23 @@ watch([title, contentHtml], () => {
 })
 
 onMounted(async () => {
-  // 编辑器工具栏的「导出」分组菜单通过这个桥接调到本页的导出逻辑。
-  // 必须在编辑器挂载（loading 结束后）之前就绪，否则工具栏会判定导出不可用。
   exportTriggerStore.__shiyiExportNote = onExport
   flushBridge.__shiyiFlushEdits = async () => {
     scheduleSave.cancel()
-    if (dirty.value) await save()
+    if (dirty.value && !conflictVisible.value) await save()
   }
-  // 刚从列表页点进来时详情还在内存里：先画出来，接口结果随后对齐
+  offMemo = onRealtime('memo', onMemoEvent)
+
+  // 刚从列表页点进来时详情还在内存里：先画出来，接口结果随后对齐。
   const cached = notesCache.detailOf(noteId.value)
   if (cached) {
     loading.value = false
-    await applyDetail(cached)
+    await applyDetail(normalizeDetail(cached))
   }
   await Promise.all([loadDetail(), refreshTags()])
   window.addEventListener('keydown', onKeydown)
   await nextTick()
-  if (mode.value === 'edit') {
-    // 阅读态没有标题输入框；编辑态沿用原来的落点，进页面就能直接打字
+  if (mode.value === 'edit' && detail.value?.editLease.heldByMe) {
     titleRef.value?.focus()
   }
 })
@@ -114,18 +202,28 @@ onBeforeUnmount(() => {
   exportTriggerStore.__shiyiExportNote = null
   flushBridge.__shiyiFlushEdits = null
   window.removeEventListener('keydown', onKeydown)
+  offMemo?.()
+  stopLeaseHeartbeat()
+  clearTimeout(remoteRefreshTimer)
   scheduleSave.cancel()
+  void releaseLease()
 })
 
 onBeforeRouteLeave(async () => {
   scheduleSave.cancel()
-  if (dirty.value) {
-    await save()
+  if (dirty.value && !conflictVisible.value) await save()
+  if (conflictVisible.value || (dirty.value && saveState.value === 'error')) {
+    ElMessage.warning(conflictVisible.value
+      ? '请先加载最新版本或把当前草稿另存为新笔记'
+      : '当前草稿尚未保存，请检查网络后重试')
+    return false
   }
+  await releaseLease()
+  return true
 })
 
 function onKeydown(event: KeyboardEvent) {
-  if (mode.value !== 'edit') return
+  if (mode.value !== 'edit' || conflictVisible.value) return
   if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
     event.preventDefault()
     scheduleSave.cancel()
@@ -139,10 +237,10 @@ function refreshTags() {
   })
 }
 
-/** 把一份详情灌进编辑器；期间不触发自动保存 */
+/** 把一份服务端详情灌进编辑器；期间不触发自动保存。 */
 async function applyDetail(data: MemoDetail) {
   applyingRemote = true
-  detail.value = data
+  detail.value = normalizeDetail(data)
   title.value = data.title
   contentHtml.value = data.contentHtml ?? ''
   tagNames.value = data.tags.map((tag) => tag.name)
@@ -150,9 +248,15 @@ async function applyDetail(data: MemoDetail) {
   changeVersion = 0
   savedVersion = 0
   dirty.value = false
+  conflictVisible.value = false
+  conflictLatest.value = null
   saveState.value = 'idle'
+  if (editingActive.value) {
+    editorAlive.value = true
+  }
   await nextTick()
   applyingRemote = false
+  syncLeaseHeartbeat()
 }
 
 function tagSignature(names: string[]) {
@@ -161,23 +265,39 @@ function tagSignature(names: string[]) {
 
 async function loadDetail() {
   try {
-    const data = await memoApi.get(noteId.value)
+    let data = normalizeDetail(await memoApi.get(noteId.value))
+    let blockedByOther = false
+
+    // 上一次选择编辑，只是表达“打开后想编辑”；真正能不能编辑由服务端租约决定。
+    if (mode.value === 'edit' && !data.editLease.heldByMe) {
+      try {
+        data = normalizeDetail(await memoApi.acquireEdit(noteId.value))
+      } catch (error) {
+        blockedByOther = error instanceof ApiError && error.status === 409
+        await leaveEditModeLocally()
+        data = normalizeDetail(await memoApi.get(noteId.value))
+      }
+    }
+
     notesCache.rememberDetail(data)
     if (changeVersion === 0 && !dirty.value) {
-      // 用户还没动过编辑器，才用服务端的版本覆盖（否则会把刚打的字冲掉）
       await applyDetail(data)
     } else {
       detail.value = data
+    }
+    if (mode.value !== 'edit' && data.editLease.heldByMe) {
+      await releaseLease()
+    }
+    if (blockedByOther) {
+      ElMessage.info(data.editLease.holderLabel
+        ? `${data.editLease.holderLabel} 正在编辑，当前以只读方式打开`
+        : '当前笔记正在其他设备编辑，已切换为只读')
     }
   } catch {
     await router.replace('/notes')
   } finally {
     loading.value = false
   }
-}
-
-async function refreshDetail() {
-  detail.value = await memoApi.get(noteId.value)
 }
 
 function save() {
@@ -187,41 +307,211 @@ function save() {
 
 async function persist() {
   const target = detail.value
-  if (!target) return
-  const version = changeVersion
+  if (!target || conflictVisible.value) return
+  if (!target.editLease.heldByMe) {
+    await openConflict('编辑权已失效，请重新取得编辑权')
+    return
+  }
+
+  const localVersion = changeVersion
   saveState.value = 'saving'
   try {
-    const updated = await memoApi.update(target.id, {
+    const updated = normalizeDetail(await memoApi.update(target.id, {
       title: title.value,
       contentHtml: contentHtml.value,
       tagNames: tagNames.value,
-    })
+      expectedVersion: target.version,
+    }))
     detail.value = updated
     notesCache.rememberDetail(updated)
     savedAt.value = formatFull(updated.updatedAt)
     saveState.value = 'saved'
-    savedVersion = Math.max(savedVersion, version)
+    savedVersion = Math.max(savedVersion, localVersion)
     dirty.value = savedVersion < changeVersion
-    // 标签只有在真的增删过时才需要重新拉：否则每次自动保存都会多打一个聚合查询
     const savedTags = tagSignature(updated.tags.map((tag) => tag.name))
     if (savedTags !== syncedTagNames) {
       syncedTagNames = savedTags
       invalidateTags()
       void refreshTags()
     }
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 409) {
+      await openConflict(error.message)
+    } else {
+      saveState.value = 'error'
+      ElMessage.error('保存失败，请检查网络后重试')
+    }
+  }
+}
+
+async function renewLease() {
+  const target = detail.value
+  if (!target || mode.value !== 'edit' || !target.editLease.heldByMe || conflictVisible.value) return
+  try {
+    const renewed = normalizeDetail(await memoApi.acquireEdit(target.id))
+    if (detail.value?.id === renewed.id) {
+      detail.value = {
+        ...detail.value,
+        version: renewed.version,
+        editLease: renewed.editLease,
+        files: renewed.files,
+        updatedAt: renewed.updatedAt,
+      }
+    }
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 409) {
+      await openConflict('编辑权已被其他设备接管')
+    }
+    // 网络抖动时保留当前租约，下一次心跳继续尝试；服务端到期前仍可保存。
+  }
+}
+
+async function releaseLease() {
+  const target = detail.value
+  if (!target?.editLease.heldByMe) return
+  stopLeaseHeartbeat()
+  try {
+    await memoApi.releaseEdit(target.id)
   } catch {
-    saveState.value = 'error'
+    // 页面已经离开时释放失败也无妨，服务端租约会自动过期。
+  } finally {
+    if (detail.value?.id === target.id) {
+      detail.value = {
+        ...detail.value,
+        editLease: { heldByMe: false },
+      }
+    }
+  }
+}
+
+async function refreshFromServer() {
+  const data = normalizeDetail(await memoApi.get(noteId.value))
+  notesCache.rememberDetail(data)
+  if (changeVersion === 0 && !dirty.value) {
+    await applyDetail(data)
+  } else {
+    detail.value = data
+  }
+  return data
+}
+
+async function openConflict(message: string) {
+  scheduleSave.cancel()
+  stopLeaseHeartbeat()
+  saveState.value = 'conflict'
+  conflictVisible.value = true
+  await releaseLease()
+  try {
+    conflictLatest.value = normalizeDetail(await memoApi.get(noteId.value))
+    notesCache.rememberDetail(conflictLatest.value)
+  } catch {
+    conflictLatest.value = null
+  }
+  ElMessage.warning(message)
+}
+
+async function loadLatestVersion() {
+  try {
+    const latest = conflictLatest.value ?? await refreshFromServer()
+    await releaseLease()
+    await applyDetail(latest)
+    setMode('read')
+    await leaveEditModeLocally()
+  } catch {
+    ElMessage.error('加载最新版本失败，请检查网络后重试')
+  }
+}
+
+async function saveConflictCopy() {
+  if (!detail.value || savingCopy.value) return
+  savingCopy.value = true
+  try {
+    const copy = normalizeDetail(await memoApi.copyConflict(detail.value.id, {
+      title: title.value,
+      contentHtml: contentHtml.value,
+      tagNames: tagNames.value,
+      expectedVersion: detail.value.version,
+    }))
+    notesCache.rememberDetail(copy)
+    conflictVisible.value = false
+    conflictLatest.value = null
+    dirty.value = false
+    saveState.value = 'idle'
+    await releaseLease()
+    forceNoteViewMode('edit')
+    await router.push(`/notes/${copy.id}`)
+  } catch (error) {
+    ElMessage.error(error instanceof ApiError ? error.message : '另存副本失败，请稍后重试')
+  } finally {
+    savingCopy.value = false
+  }
+}
+
+function onMemoEvent(raw: unknown) {
+  const event = raw as MemoRealtimeEvent
+  if (!event || event.memoId !== noteId.value) return
+  if (event.event === 'delete') {
+    ElMessage.warning('这篇笔记已在其他设备删除')
+    void router.replace('/notes')
+    return
+  }
+  if (event.sessionId === editSessionId) return
+  clearTimeout(remoteRefreshTimer)
+  remoteRefreshTimer = setTimeout(() => void handleRemoteChange(), 120)
+}
+
+async function handleRemoteChange() {
+  try {
+    const data = normalizeDetail(await memoApi.get(noteId.value))
+    notesCache.rememberDetail(data)
+
+    if (mode.value !== 'edit') {
+      if (dirty.value) {
+        await openConflict('笔记已在其他设备更新')
+      } else {
+        await applyDetail(data)
+      }
+      return
+    }
+
+    if (!data.editLease.heldByMe) {
+      if (dirty.value) {
+        await openConflict('编辑权已被其他设备接管')
+      } else {
+        await applyDetail(data)
+        setMode('read')
+        await leaveEditModeLocally()
+      }
+      return
+    }
+
+    if (data.version !== detail.value?.version && dirty.value) {
+      await openConflict('笔记已在其他设备更新')
+      return
+    }
+    if (detail.value) {
+      detail.value = {
+        ...detail.value,
+        version: data.version,
+        editLease: data.editLease,
+        files: data.files,
+        updatedAt: data.updatedAt,
+      }
+    }
+  } catch {
+    // SSE 只负责提示；拉取失败时保留当前页面，下次事件或手动操作再同步。
   }
 }
 
 function onTagsChanged() {
+  if (conflictVisible.value) return
   changeVersion += 1
   dirty.value = true
   scheduleSave.cancel()
   void save()
 }
 
-/** 导出用的是编辑器里的最新内容，没保存的部分也在内 */
+/** 导出用的是编辑器里的最新内容，没保存的部分也在内。 */
 async function onExport(format: ExportFormat) {
   if (!detail.value || exporting.value) return
   exporting.value = true
@@ -234,7 +524,6 @@ async function onExport(format: ExportFormat) {
     exporting.value = false
   }
 }
-
 </script>
 
 <template>
@@ -245,7 +534,7 @@ async function onExport(format: ExportFormat) {
       </button>
 
       <input
-        v-if="mode === 'edit'"
+        v-if="editingActive"
         ref="titleRef"
         v-model="title"
         class="title-input"
@@ -276,6 +565,7 @@ async function onExport(format: ExportFormat) {
           :class="{ on: mode === 'edit' }"
           :aria-pressed="mode === 'edit'"
           title="编辑"
+          :disabled="acquiring"
           @click="setViewMode('edit')"
         >
           <el-icon :size="15"><EditPen /></el-icon>
@@ -283,12 +573,14 @@ async function onExport(format: ExportFormat) {
         </button>
       </div>
 
-      <span class="save-state muted" role="status" aria-live="polite">{{ saveLabel }}</span>
+      <span class="save-state muted" role="status" aria-live="polite">
+        {{ readOnlyLabel || saveLabel }}
+      </span>
     </header>
 
     <div class="tag-row">
       <el-select
-        v-if="mode === 'edit'"
+        v-if="editingActive"
         v-model="tagNames"
         multiple
         filterable
@@ -310,26 +602,46 @@ async function onExport(format: ExportFormat) {
       </div>
 
       <span v-if="detail" class="muted detail-time tnum">
-        {{ mode === 'read' ? '更新于' : '创建于' }}
-        {{ formatFull(mode === 'read' ? detail.updatedAt : detail.createdAt) }}
+        {{ editingActive ? '创建于' : '更新于' }}
+        {{ formatFull(editingActive ? detail.createdAt : detail.updatedAt) }}
       </span>
     </div>
 
     <div class="editor-wrap">
       <el-skeleton v-if="loading" :rows="6" animated class="editor-skeleton" />
       <template v-else>
-        <div v-show="mode === 'read'" class="read-view">
+        <div v-show="!editingActive" class="read-view">
           <MarkdownView :content="contentHtml" link-actions />
         </div>
         <RichEditor
           v-if="editorAlive"
-          v-show="mode === 'edit'"
+          v-show="editingActive"
           ref="editorRef"
           v-model="contentHtml"
           :memo-id="noteId"
         />
       </template>
     </div>
+
+    <el-dialog
+      v-model="conflictVisible"
+      title="这篇笔记已在其他设备更新"
+      width="min(520px, calc(100vw - 32px))"
+      :close-on-click-modal="false"
+      :close-on-press-escape="false"
+      :show-close="false"
+      append-to-body
+    >
+      <p class="conflict-copy">
+        当前页面里的草稿仍在，尚未覆盖任何内容。请选择加载服务端的最新版本，或者把当前草稿另存为一条新笔记。
+      </p>
+      <template #footer>
+        <el-button @click="loadLatestVersion">加载最新版本</el-button>
+        <el-button type="primary" :loading="savingCopy" @click="saveConflictCopy">
+          保存为新笔记
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -461,6 +773,12 @@ async function onExport(format: ExportFormat) {
 .save-state {
   flex: 0 0 auto;
   font-size: 12.5px;
+}
+
+.conflict-copy {
+  margin: 0;
+  color: var(--text-2);
+  line-height: 1.7;
 }
 
 .tag-row {

@@ -46,6 +46,7 @@ onBeforeUnmount(() => {
 <template>
   <!-- 统一 Element Plus 的中文文案（下拉空状态、弹窗按钮等） -->
   <el-config-provider :locale="zhCn">
-    <router-view />
+    <!-- 笔记详情从原笔记跳到冲突副本时也重新挂载，避免沿用上一条笔记的编辑状态 -->
+    <router-view :key="$route.fullPath" />
   </el-config-provider>
 </template>
