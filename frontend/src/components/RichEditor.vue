@@ -10,7 +10,13 @@
   }
 </script>
 <template>
-  <div class="rich-editor">
+  <div
+    class="rich-editor"
+    @dragenter.capture="onDragEnter"
+    @dragover.capture="onDragOver"
+    @dragleave.capture="onDragLeave"
+    @drop.capture="onDrop"
+  >
     <div class="rich-editor-toolbar-row">
       <Toolbar
         class="rich-editor-toolbar"
@@ -29,6 +35,54 @@
         :defaultConfig="editorConfig"
         @onCreated="onCreateEditor"
       />
+
+      <Transition name="attachment-overlay">
+        <div v-if="dragActive" class="attachment-drop-overlay" aria-hidden="true">
+          <div class="attachment-drop-panel">
+            <span class="attachment-drop-icon">
+              <el-icon :size="24"><UploadFilled /></el-icon>
+            </span>
+            <strong>松开以添加文件</strong>
+            <span>图片会插入正文，其他文件会添加为附件</span>
+          </div>
+        </div>
+      </Transition>
+
+      <div
+        v-if="uploadTasks.length"
+        class="attachment-upload-stack"
+        role="status"
+        aria-live="polite"
+        aria-label="文件上传状态"
+      >
+        <div
+          v-for="task in visibleUploadTasks"
+          :key="task.id"
+          class="attachment-upload-item"
+          :class="`is-${task.state}`"
+        >
+          <div class="attachment-upload-head">
+            <el-icon class="attachment-upload-state" :size="16">
+              <Loading v-if="task.state === 'uploading'" class="is-loading" />
+              <CircleCheck v-else-if="task.state === 'done'" />
+              <CircleClose v-else />
+            </el-icon>
+            <span class="attachment-upload-copy">
+              <span class="attachment-upload-name">{{ task.name }}</span>
+              <span class="attachment-upload-meta">{{ uploadTaskLabel(task) }}</span>
+            </span>
+          </div>
+          <el-progress
+            :percentage="task.progress"
+            :show-text="false"
+            :stroke-width="3"
+            :status="task.state === 'error' ? 'exception' : undefined"
+          />
+        </div>
+        <div v-if="hiddenUploadCount" class="attachment-upload-more">
+          另有 {{ hiddenUploadCount }} 个文件正在处理
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -38,6 +92,7 @@
   import './rich-editor.scss'
   import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from 'vue'
   import { ElMessage } from 'element-plus'
+  import { CircleCheck, CircleClose, Loading, UploadFilled } from '@element-plus/icons-vue'
   import { Editor, Toolbar } from '@wangeditor/editor-for-vue'
   import {
     Boot,
@@ -345,7 +400,44 @@
   // 编辑器实例
   const editorRef = shallowRef<IDomEditor>()
   const fileInput = ref<HTMLInputElement | null>(null)
-  const uploading = ref(false)
+
+  interface UploadTask {
+    id: number
+    name: string
+    progress: number
+    state: 'uploading' | 'done' | 'error'
+  }
+
+  const uploadTasks = ref<UploadTask[]>([])
+  const visibleUploadTasks = computed(() => uploadTasks.value.slice(-3))
+  const hiddenUploadCount = computed(() => Math.max(0, uploadTasks.value.length - 3))
+  const uploading = computed(() => uploadTasks.value.some((task) => task.state === 'uploading'))
+  const dragDepth = ref(0)
+  const dragActive = computed(() => dragDepth.value > 0)
+  const uploadTimers = new Set<ReturnType<typeof setTimeout>>()
+  let uploadTaskId = 0
+
+  function patchUploadTask(id: number, patch: Partial<UploadTask>) {
+    uploadTasks.value = uploadTasks.value.map((task) => (
+      task.id === id ? { ...task, ...patch } : task
+    ))
+  }
+
+  function finishUploadTask(id: number, state: 'done' | 'error') {
+    patchUploadTask(id, { progress: state === 'done' ? 100 : uploadTasks.value.find((task) => task.id === id)?.progress ?? 0, state })
+    const timer = setTimeout(() => {
+      uploadTasks.value = uploadTasks.value.filter((task) => task.id !== id)
+      uploadTimers.delete(timer)
+    }, state === 'done' ? 900 : 3500)
+    uploadTimers.add(timer)
+  }
+
+  function uploadTaskLabel(task: UploadTask) {
+    if (task.state === 'done') return '已完成'
+    if (task.state === 'error') return '上传失败'
+    if (task.progress >= 100) return '正在处理…'
+    return `上传中 ${task.progress}%`
+  }
 
   /** 高度用 100% 时交给 flex 布局撑满，否则用固定值 */
   const bodyStyle = computed(() => (props.height === '100%' ? undefined : { height: props.height }))
@@ -445,19 +537,32 @@
     toolbarKeys: DEFAULT_TOOLBAR_KEYS,
   }))
 
-  /** 站内统一上传：图片 / 视频 / 附件都走 fileApi，落库时关联当前笔记 */
-  async function uploadToServer(file: File): Promise<FileAsset | null> {
-    uploading.value = true
+  /** 站内统一上传：图片 / 视频 / 附件都走 fileApi，并把真实进度同步到编辑器。 */
+  async function uploadToServer(
+    file: File,
+    options: { notify?: boolean } = {},
+  ): Promise<FileAsset | null> {
+    const { notify = true } = options
+    const taskId = ++uploadTaskId
+    uploadTasks.value = [
+      ...uploadTasks.value,
+      { id: taskId, name: file.name, progress: 0, state: 'uploading' },
+    ]
     try {
-      const asset = await fileApi.upload(file, props.memoId ?? undefined)
+      const asset = await fileApi.upload(file, props.memoId ?? undefined, (progress) => {
+        const current = uploadTasks.value.find((task) => task.id === taskId)
+        if (current && current.progress !== progress) {
+          patchUploadTask(taskId, { progress })
+        }
+      })
       emit('uploaded', asset)
-      ElMessage.success('已上传')
+      finishUploadTask(taskId, 'done')
+      if (notify) ElMessage.success('已上传')
       return asset
     } catch {
-      ElMessage.error('上传失败')
+      finishUploadTask(taskId, 'error')
+      if (notify) ElMessage.error('上传失败')
       return null
-    } finally {
-      uploading.value = false
     }
   }
 
@@ -520,6 +625,146 @@
     }
   }
 
+  function hasDraggedFiles(event: DragEvent) {
+    return Array.from(event.dataTransfer?.types ?? []).includes('Files')
+  }
+
+  function onDragEnter(event: DragEvent) {
+    if (!hasDraggedFiles(event)) return
+    event.preventDefault()
+    event.stopPropagation()
+    dragDepth.value += 1
+  }
+
+  function onDragOver(event: DragEvent) {
+    if (!hasDraggedFiles(event)) return
+    event.preventDefault()
+    event.stopPropagation()
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy'
+  }
+
+  function onDragLeave() {
+    if (dragDepth.value === 0) return
+    dragDepth.value = Math.max(0, dragDepth.value - 1)
+  }
+
+  function onDrop(event: DragEvent) {
+    const files = Array.from(event.dataTransfer?.files ?? [])
+    dragDepth.value = 0
+    if (!files.length) return
+
+    event.preventDefault()
+    event.stopPropagation()
+    const editor = editorRef.value
+    if (!editor) return
+
+    // 在拖放位置建立选区；上传完成后仍回到这里插入，而不是跳到别处。
+    let dropSelection: IDomEditor['selection'] = null
+    try {
+      editor.focus()
+      const caretDocument = document as Document & {
+        caretRangeFromPoint?: (x: number, y: number) => Range | null
+        caretPositionFromPoint?: (x: number, y: number) => { offsetNode: Node; offset: number } | null
+      }
+      let domRange: Range | null = null
+      if (caretDocument.caretRangeFromPoint) {
+        domRange = caretDocument.caretRangeFromPoint(event.clientX, event.clientY)
+      } else {
+        const position = caretDocument.caretPositionFromPoint?.(event.clientX, event.clientY)
+        if (position) {
+          domRange = document.createRange()
+          domRange.setStart(position.offsetNode, position.offset)
+          domRange.collapse(true)
+        }
+      }
+      if (domRange) {
+        const slateRange = DomEditor.toSlateRange(editor, domRange, {
+          exactMatch: false,
+          suppressThrow: true,
+        })
+        if (slateRange) SlateTransforms.select(editor, slateRange)
+      }
+      dropSelection = editor.selection ? { ...editor.selection } : null
+    } catch {
+      dropSelection = editor.selection ? { ...editor.selection } : null
+    }
+
+    void insertDroppedFiles(files, dropSelection)
+  }
+
+  function restoreDropSelection(editor: IDomEditor, selection: IDomEditor['selection']) {
+    if (!selection) {
+      if (editor.selection == null) editor.restoreSelection()
+      return
+    }
+    try {
+      SlateTransforms.select(editor, selection)
+    } catch {
+      // 上传期间正文结构变化时，原选区可能失效，退回当前光标即可。
+    }
+  }
+
+  function insertDroppedAsset(editor: IDomEditor, asset: FileAsset) {
+    if (asset.kind === 'image') {
+      SlateTransforms.insertNodes(editor, {
+        type: 'image',
+        src: asset.url,
+        href: '',
+        alt: asset.originalName,
+        style: {},
+        children: [{ text: '' }],
+      } as unknown as Parameters<typeof editor.insertNode>[0])
+      return
+    }
+
+    editor.insertNode({
+      type: ATTACHMENT_ELEMENT_TYPE,
+      url: fileDownloadUrl(asset.id),
+      name: asset.originalName || '附件',
+      children: [{ text: '' }],
+    } as unknown as Parameters<typeof editor.insertNode>[0])
+    editor.insertNode({ text: ' ' })
+  }
+
+  async function insertDroppedFiles(
+    files: File[],
+    dropSelection: IDomEditor['selection'],
+  ) {
+    const assets = await Promise.all(
+      files.map((file) => uploadToServer(file, { notify: false })),
+    )
+    const editor = editorRef.value
+    if (!editor) return
+
+    const inserted = assets.filter((asset): asset is FileAsset => asset != null)
+    if (!inserted.length) {
+      ElMessage.error('文件上传失败')
+      return
+    }
+
+    restoreDropSelection(editor, dropSelection)
+    let insertedCount = 0
+    for (const asset of inserted) {
+      try {
+        insertDroppedAsset(editor, asset)
+        insertedCount += 1
+      } catch {
+        // 单个文件落点无效时不阻断其余文件。
+      }
+    }
+
+    if (insertedCount > 0) {
+      ElMessage.success(
+        insertedCount === 1
+          ? `已将「${inserted[0].originalName}」添加到笔记`
+          : `已添加 ${insertedCount} 个文件`,
+      )
+    }
+    if (insertedCount < files.length) {
+      ElMessage.warning(`${files.length - insertedCount} 个文件未能插入`)
+    }
+  }
+
   function onFilePicked(event: Event) {
     const input = event.target as HTMLInputElement
     const file = input.files?.[0]
@@ -567,6 +812,8 @@
 
   onBeforeUnmount(() => {
     triggerStore.__shiyiAttachmentTrigger = null
+    for (const timer of uploadTimers) clearTimeout(timer)
+    uploadTimers.clear()
     const editor = editorRef.value
     if (editor) {
       editor.destroy()

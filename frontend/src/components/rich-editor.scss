@@ -116,10 +116,143 @@ $box-radius: var(--radius-sm);
 
   /* 正文区域：编辑区和分享页共用一套排版观感 */
   .rich-editor-body {
+    position: relative;
     flex: 1;
     min-height: 0;
     display: flex;
     flex-direction: column;
+  }
+
+  /* 外部文件拖入时覆盖正文区，但不拦截 drop 事件 */
+  .attachment-drop-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 6;
+    display: grid;
+    place-items: center;
+    padding: var(--space-5);
+    border: 2px dashed var(--brand-fill);
+    border-radius: var(--radius);
+    background: var(--panel);
+    pointer-events: none;
+  }
+
+  .attachment-drop-panel {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    color: var(--text);
+    text-align: center;
+  }
+
+  .attachment-drop-icon {
+    display: grid;
+    place-items: center;
+    width: 52px;
+    height: 52px;
+    margin-bottom: 2px;
+    border-radius: 14px;
+    background: var(--brand-soft);
+    color: var(--brand);
+  }
+
+  .attachment-drop-panel strong {
+    font-size: 15px;
+    font-weight: 650;
+  }
+
+  .attachment-drop-panel > span:last-child {
+    color: var(--text-3);
+    font-size: 12.5px;
+  }
+
+  /* 上传进度固定显示在正文右上角，不打断继续输入 */
+  .attachment-upload-stack {
+    position: absolute;
+    top: var(--space-3);
+    right: var(--space-4);
+    z-index: 5;
+    display: flex;
+    width: min(340px, calc(100% - var(--space-8)));
+    flex-direction: column;
+    gap: var(--space-2);
+    pointer-events: none;
+  }
+
+  .attachment-upload-item {
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--panel);
+    box-shadow: var(--shadow);
+  }
+
+  .attachment-upload-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+
+  .attachment-upload-state {
+    flex: 0 0 auto;
+    color: var(--brand);
+  }
+
+  .attachment-upload-item.is-done .attachment-upload-state {
+    color: var(--success);
+  }
+
+  .attachment-upload-item.is-error .attachment-upload-state {
+    color: var(--danger);
+  }
+
+  .attachment-upload-copy {
+    display: flex;
+    min-width: 0;
+    flex: 1;
+    flex-direction: column;
+    gap: 1px;
+  }
+
+  .attachment-upload-name,
+  .attachment-upload-meta {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .attachment-upload-name {
+    color: var(--text);
+    font-size: 12.5px;
+    font-weight: 600;
+  }
+
+  .attachment-upload-meta {
+    color: var(--text-3);
+    font-size: 11.5px;
+  }
+
+  .attachment-upload-item :deep(.el-progress-bar__outer) {
+    background: var(--panel-hover);
+  }
+
+  .attachment-upload-more {
+    padding: 2px 4px;
+    color: var(--text-3);
+    font-size: 11.5px;
+    text-align: right;
+  }
+
+  .attachment-overlay-enter-active,
+  .attachment-overlay-leave-active {
+    transition: opacity var(--dur) var(--ease-out);
+  }
+
+  .attachment-overlay-enter-from,
+  .attachment-overlay-leave-to {
+    opacity: 0;
   }
 
   .w-e-text-container {
