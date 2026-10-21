@@ -1,8 +1,11 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { ElMessage } from 'element-plus'
 import { Document, Download } from '@element-plus/icons-vue'
 import type { FileAsset } from '@/types'
 import { fileKindLabel, formatFull, formatSize } from '@/utils/format'
+import { fileDownloadUrl } from '@/utils/attachments'
+import { downloadUrl } from '@/utils/download'
 
 const props = defineProps<{ modelValue: boolean; file: FileAsset | null }>()
 const emit = defineEmits<{ 'update:modelValue': [boolean] }>()
@@ -13,6 +16,12 @@ const open = computed({
 })
 
 const isPdf = computed(() => props.file?.mime === 'application/pdf')
+
+function downloadCurrent() {
+  if (!props.file) return
+  downloadUrl(fileDownloadUrl(props.file.id), props.file.originalName)
+  ElMessage.success('已开始下载附件')
+}
 </script>
 
 <template>
@@ -44,6 +53,9 @@ const isPdf = computed(() => props.file?.mime === 'application/pdf')
       <div v-else class="empty">
         <el-icon :size="22"><Document /></el-icon>
         <p>此文件无法预览，请下载到本地打开</p>
+        <el-button type="primary" @click="downloadCurrent">
+          <el-icon><Download /></el-icon><span>下载文件</span>
+        </el-button>
       </div>
     </div>
 
@@ -53,7 +65,7 @@ const isPdf = computed(() => props.file?.mime === 'application/pdf')
           {{ fileKindLabel(file.kind) }} · {{ formatSize(file.size) }} ·
           {{ file.width && file.height ? `${file.width}×${file.height} · ` : '' }}{{ formatFull(file.createdAt) }}
         </span>
-        <el-button tag="a" :href="`/api/files/${file.id}/download`">
+        <el-button @click="downloadCurrent">
           <el-icon><Download /></el-icon><span>下载</span>
         </el-button>
       </div>

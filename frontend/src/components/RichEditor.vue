@@ -39,15 +39,165 @@
   import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from 'vue'
   import { ElMessage } from 'element-plus'
   import { Editor, Toolbar } from '@wangeditor/editor-for-vue'
-  import { Boot, DomEditor, SlateElement, SlateTransforms } from '@wangeditor/editor'
+  import {
+    Boot,
+    DomEditor,
+    SlateElement,
+    SlateTransforms,
+  } from '@wangeditor/editor'
   import type { IButtonMenu, IDomEditor, IEditorConfig, IToolbarConfig } from '@wangeditor/editor'
+  import { h, type VNode } from 'snabbdom'
   import { fileApi } from '@/api'
   import { copyText } from '@/utils/clipboard'
+  import {
+    ATTACHMENT_ELEMENT_TYPE,
+    ATTACHMENT_FILE_ICON,
+    fileDownloadUrl,
+    isSiteAttachmentUrl,
+  } from '@/utils/attachments'
+  import { downloadUrl } from '@/utils/download'
   import type { FileAsset } from '@/types'
 
   type InsertImageFnType = (url: string, alt: string, href: string) => void
   type InsertVideoFnType = (url: string, poster: string) => void
   type ExportFormat = 'md' | 'html' | 'doc' | 'pdf' | 'png'
+
+  interface AttachmentElement {
+    [key: string]: unknown
+    type: typeof ATTACHMENT_ELEMENT_TYPE
+    url: string
+    name: string
+    children: { text: string }[]
+  }
+
+  function escapeHtml(value: string) {
+    return value.replace(/[&<>"']/g, (character) => {
+      switch (character) {
+        case '&': return '&amp;'
+        case '<': return '&lt;'
+        case '>': return '&gt;'
+        case '"': return '&quot;'
+        default: return '&#39;'
+      }
+    })
+  }
+
+  function renderAttachment(
+    elemNode: SlateElement,
+    _children: VNode[] | null,
+    editor: IDomEditor,
+  ): VNode {
+    const { url, name } = elemNode as unknown as AttachmentElement
+    const selected = DomEditor.isNodeSelected(editor, elemNode)
+    return h('span', {
+      attrs: {
+        title: name,
+        contenteditable: 'false',
+        role: 'group',
+        'aria-label': `${name}，附件`,
+        'data-selected': selected ? 'true' : '',
+        class: 'shiyi-attachment-card',
+      },
+    }, [
+      h('span', {
+        attrs: { class: 'shiyi-attachment-icon' },
+        props: { innerHTML: ATTACHMENT_FILE_ICON },
+      }),
+      h('span', { attrs: { class: 'shiyi-attachment-name' } }, name),
+      h('a', {
+        attrs: {
+          class: 'shiyi-attachment-action',
+          href: url,
+          download: name,
+          title: `下载 ${name}`,
+          'aria-label': `下载 ${name}`,
+        },
+        on: {
+          mousedown(event: MouseEvent) {
+            event.stopPropagation()
+          },
+          click(event: MouseEvent) {
+            event.preventDefault()
+            event.stopPropagation()
+            downloadUrl(url, name)
+            ElMessage.success('已开始下载附件')
+          },
+        },
+      }, '下载'),
+    ])
+  }
+
+  const ATTACHMENT_MODULE_VERSION = 'attachment-card-v3'
+  const attachmentModuleState = globalThis as unknown as {
+    __shiyiAttachmentModule?: string
+    __shiyiAttachmentPluginRegistered?: boolean
+  }
+
+  if (attachmentModuleState.__shiyiAttachmentModule !== ATTACHMENT_MODULE_VERSION) {
+    attachmentModuleState.__shiyiAttachmentModule = ATTACHMENT_MODULE_VERSION
+    Boot.registerPreParseHtml({
+      selector: 'a[href]',
+      preParseHtml(element) {
+        const href = element.getAttribute('href') ?? ''
+        if (!isSiteAttachmentUrl(href) || element.querySelector('img, video, audio')) {
+          return element
+        }
+        const name = element.getAttribute('data-name')
+          || element.textContent?.trim()
+          || '附件'
+        element.setAttribute('data-w-e-type', ATTACHMENT_ELEMENT_TYPE)
+        element.setAttribute('data-w-e-is-void', 'true')
+        element.setAttribute('data-name', name)
+        return element
+      },
+    })
+    Boot.registerRenderElem({
+      type: ATTACHMENT_ELEMENT_TYPE,
+      renderElem: renderAttachment,
+    })
+    Boot.registerElemToHtml({
+      type: ATTACHMENT_ELEMENT_TYPE,
+      elemToHtml(element) {
+        const { url, name } = element as unknown as AttachmentElement
+        const safeName = escapeHtml(name || '附件')
+        return `<span class="shiyi-attachment-card" data-w-e-type="${ATTACHMENT_ELEMENT_TYPE}" ` +
+          `data-w-e-is-void="true" data-name="${safeName}" title="${safeName}" ` +
+          `aria-label="${safeName}，附件">` +
+          `<span class="shiyi-attachment-icon">${ATTACHMENT_FILE_ICON}</span>` +
+          `<span class="shiyi-attachment-name">${safeName}</span>` +
+          `<a class="shiyi-attachment-action" href="${escapeHtml(url)}" download="${safeName}" ` +
+          `aria-label="下载 ${safeName}">下载</a></span>`
+      },
+    })
+    Boot.registerParseElemHtml({
+      selector: `[data-w-e-type="${ATTACHMENT_ELEMENT_TYPE}"]`,
+      parseElemHtml(element) {
+        const name = element.getAttribute('data-name') || element.textContent?.trim() || '附件'
+        return {
+          type: ATTACHMENT_ELEMENT_TYPE,
+          url: element.getAttribute('href')
+            || element.querySelector<HTMLAnchorElement>('.shiyi-attachment-action')?.getAttribute('href')
+            || '',
+          name,
+          children: [{ text: '' }],
+        } as AttachmentElement
+      },
+    })
+  }
+
+  if (!attachmentModuleState.__shiyiAttachmentPluginRegistered) {
+    attachmentModuleState.__shiyiAttachmentPluginRegistered = true
+    Boot.registerPlugin((editor) => {
+      const { isInline, isVoid } = editor
+      editor.isInline = (element) => (
+        SlateElement.isElement(element) && element.type === ATTACHMENT_ELEMENT_TYPE
+      ) || isInline(element)
+      editor.isVoid = (element) => (
+        SlateElement.isElement(element) && element.type === ATTACHMENT_ELEMENT_TYPE
+      ) || isVoid(element)
+      return editor
+    })
+  }
 
   /** 附件按钮与组件实例的桥接：菜单类全局注册，exec 时找当前挂载的编辑器组件 */
   type AttachmentTrigger = { trigger: () => void; disabled: () => boolean }
@@ -381,11 +531,11 @@
       if (!asset || !editor) return
       try {
         editor.insertNode({
-          type: 'link',
-          url: asset.url,
-          target: '_blank',
-          children: [{ text: asset.originalName || '附件' }],
-        })
+          type: ATTACHMENT_ELEMENT_TYPE,
+          url: fileDownloadUrl(asset.id),
+          name: asset.originalName || '附件',
+          children: [{ text: '' }],
+        } as unknown as Parameters<typeof editor.insertNode>[0])
         editor.insertNode({ text: ' ' })
       } catch {
         ElMessage.warning('当前位置不能插入附件')

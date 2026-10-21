@@ -1,8 +1,11 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
+import { ElMessage } from 'element-plus'
 import { sanitizeRichText } from '@/utils/richText'
 import { useImageLightbox } from '@/composables/useImageLightbox'
 import LinkActionBar from '@/components/LinkActionBar.vue'
+import { attachmentName, enhanceAttachmentLinks, isSiteAttachmentUrl } from '@/utils/attachments'
+import { downloadUrl } from '@/utils/download'
 
 const props = defineProps<{
   content?: string | null
@@ -27,19 +30,32 @@ const html = computed(() => {
   return props.publicToken ? rewritePublicAssets(rendered, props.publicToken) : rendered
 })
 
-// v-html 里的 DOM Vue 不接管，渲染后给图片挂上点开看大图
-watch(html, () => nextTick(() => attach(containerRef.value)), { immediate: true })
+// v-html 里的 DOM Vue 不接管，渲染后给图片挂上点开看大图，并把文件链接整形成附件卡片
+watch(html, () => nextTick(() => {
+  attach(containerRef.value)
+  enhanceAttachmentLinks(containerRef.value)
+}), { immediate: true })
 // 换了内容（比如切到另一篇笔记）就把旧条子收掉，别留在原来的位置
 watch(() => props.content, () => closeBar())
 
 /** 正文里的链接也是 v-html 插进来的，用事件委托找点中的那一个 */
 function onContentClick(event: MouseEvent) {
-  if (!props.linkActions) return
   const anchor = (event.target as HTMLElement | null)?.closest?.('a[href]') as HTMLAnchorElement | null
   if (!anchor) {
-    closeBar()
+    if (props.linkActions) closeBar()
     return
   }
+  if (isSiteAttachmentUrl(anchor.href)) {
+    // 附件直接下载。阅读态的通用链接快捷条不再插一层，避免“点了没反应”：
+    // 旧入口用 window.open 打开 attachment 响应，容易被新窗口或弹窗限制吞掉。
+    event.preventDefault()
+    event.stopPropagation()
+    closeBar()
+    downloadUrl(anchor.href, attachmentName(anchor))
+    ElMessage.success('已开始下载附件')
+    return
+  }
+  if (!props.linkActions) return
   // 阅读时先别直接跳走：把编辑模式那两条操作摆出来，由用户自己选
   event.preventDefault()
   barAnchor = anchor

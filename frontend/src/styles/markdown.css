@@ -42,6 +42,98 @@
   color: var(--brand);
 }
 
+/* 站内文件不是普通链接：整张卡片用于选择 / 摆放，只有右侧按钮触发下载 */
+.markdown-body .shiyi-attachment-card,
+[data-slate-editor] .shiyi-attachment-card {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  max-width: min(100%, 440px);
+  margin: 2px 0;
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel-2);
+  color: var(--text);
+  line-height: 1.35;
+  text-decoration: none;
+  vertical-align: middle;
+  cursor: default;
+  transition: border-color var(--dur) var(--ease-out),
+    background var(--dur) var(--ease-out);
+}
+
+.markdown-body .shiyi-attachment-card:hover,
+[data-slate-editor] .shiyi-attachment-card:hover,
+[data-slate-editor] .shiyi-attachment-card[data-selected='true'] {
+  border-color: var(--brand-fill);
+  background: var(--brand-soft);
+  color: var(--text);
+}
+
+.shiyi-attachment-icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 30px;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--brand);
+}
+
+.shiyi-attachment-icon svg {
+  width: 16px;
+  height: 16px;
+  fill: currentColor;
+}
+
+.shiyi-attachment-name {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 13.5px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shiyi-attachment-action {
+  flex: 0 0 auto;
+  margin-left: 2px;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--panel);
+  color: var(--brand);
+  font-size: 12.5px;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+  transition: border-color var(--dur) var(--ease-out),
+    background var(--dur) var(--ease-out);
+}
+
+.shiyi-attachment-action:hover,
+.shiyi-attachment-action:focus-visible {
+  border-color: var(--brand-fill);
+  background: var(--brand-soft);
+  color: var(--brand-hover);
+}
+
+@media (max-width: 480px) {
+  .markdown-body .shiyi-attachment-card,
+  [data-slate-editor] .shiyi-attachment-card {
+    gap: 7px;
+    max-width: 100%;
+  }
+
+  .shiyi-attachment-icon {
+    flex-basis: 28px;
+    width: 28px;
+    height: 28px;
+  }
+}
+
 .markdown-body ul,
 .markdown-body ol {
   padding-left: 1.5em;

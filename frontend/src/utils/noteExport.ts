@@ -1,6 +1,7 @@
 import { ElMessage } from 'element-plus'
 import markdownCss from '@/styles/markdown.css?raw'
 import { sanitizeRichText } from '@/utils/richText'
+import { enhanceAttachmentLinks } from '@/utils/attachments'
 import { htmlToMarkdown } from '@/utils/htmlToMarkdown'
 import { downloadBlob } from '@/utils/download'
 
@@ -105,6 +106,7 @@ ${markdownCss}
 /** 把指向站内附件的链接改写成 data URI 或绝对链接 */
 async function inlineAssets(html: string): Promise<string> {
   const doc = new DOMParser().parseFromString(html, 'text/html')
+  enhanceAttachmentLinks(doc.body)
   const jobs: Promise<void>[] = []
   for (const element of doc.querySelectorAll('img[src], a[href], video[src], audio[src], source[src]')) {
     for (const attribute of ['src', 'href'] as const) {
@@ -171,6 +173,9 @@ pre { background: #f5f5f4; border: 1px solid #d6d3d1; padding: 10px; font-family
 code { font-family: Consolas, monospace; background: #f5f5f4; }
 blockquote { border-left: 3px solid #d6d3d1; margin-left: 0; padding-left: 12px; color: #57534e; }
 a { color: #b45309; }
+a.shiyi-attachment-card { display: inline-block; border: 1px solid #d6d3d1; border-radius: 8px; padding: 5px 8px; color: #1c1917; text-decoration: none; }
+.shiyi-attachment-icon svg { width: 16px; height: 16px; fill: #b45309; vertical-align: middle; margin-right: 5px; }
+.shiyi-attachment-action { color: #b45309; margin-left: 8px; }
 .word-title { font-size: 20pt; font-weight: 700; margin: 0 0 4pt; }
 .word-meta { color: #78716c; font-size: 9pt; margin: 0 0 18pt; }
 .word-footer { color: #a8a29e; font-size: 9pt; margin-top: 24pt; }
@@ -297,6 +302,7 @@ function mountSheet(note: ExportableNote): { node: HTMLElement; cleanup: () => v
     host.remove()
     throw new Error('导出节点挂载失败')
   }
+  enhanceAttachmentLinks(node)
   return { node, cleanup: () => host.remove() }
 }
 
